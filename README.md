@@ -1,13 +1,15 @@
 # Prime Send/Receive Go
 
-Prime Send/Receive Go is a deposit and withdrawal management system with Coinbase Prime API integration, designed to work out of the box with Coinbase Prime's scalable deposit address solution.
+Prime Send/Receive Go is a deposit and withdrawal management system with Coinbase Prime API integration, designed to work out of the box with Coinbase Prime's scalable deposit address solution. 
+
+This is a sample application; test thoroughly and verify it meets your requirements before using.
 
 ## Overview
 
-This system processes crypto deposits and withdrawals in real time by monitoring Prime API transactions and maintaining user balances in a high-performance subledger.
+This system processes crypto deposits and withdrawals by monitoring Prime API transactions and maintaining user balances in a high-performance subledger.
 
 **Core Features:**
-- Real-time deposit detection from Prime API
+- Deposit detection from Prime API
 - Withdrawal confirmation tracking via idempotency keys
 - Subledger with O(1) balance lookups
 - Complete audit trail and transaction history
@@ -58,12 +60,12 @@ assets:
     network: "solana-mainnet"
 ```
 
-### 3. User Configuration (Production)
+### 3. User Configuration 
 
-**For Production Use**: Edit `migrations/004_add_more_dummy_users.sql` to replace dummy users with your actual users:
+Edit `migrations/004_add_more_dummy_users.sql` to replace dummy users with your actual users:
 
 ```sql
--- Replace the dummy users with your production users
+-- Replace the dummy users with users
 INSERT INTO users (name, email) VALUES 
     ('John Doe', 'john.doe@yourcompany.com'),
     ('Jane Smith', 'jane.smith@yourcompany.com'),
@@ -87,7 +89,7 @@ This will:
 
 ### Deposit & Withdrawal Listener
 
-Start the real-time transaction listener:
+Start the transaction listener:
 ```bash
 go run cmd/listener/main.go
 ```
@@ -96,7 +98,7 @@ This service:
 - Monitors all configured wallets for new transactions
 - Processes deposits automatically when they reach "TRANSACTION_IMPORTED" status
 - Processes withdrawals when they reach "TRANSACTION_DONE" status
-- Updates user balances in real-time
+- Updates user balances
 - Handles out-of-order transactions with lookback window
 - Prevents duplicate processing
 

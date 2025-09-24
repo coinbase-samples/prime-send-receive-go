@@ -29,7 +29,7 @@ func main() {
 	defer func(logger *zap.Logger) {
 		if err := logger.Sync(); err != nil {
 			if !isIgnorableSyncError(err) {
-				log.Printf("Failed to sync logger: %v", err)
+				log.Printf("Failed to sync logger: %v\n", err)
 			}
 		}
 	}(logger)
