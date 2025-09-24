@@ -5,7 +5,9 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
+	"time"
 
 	"prime-send-receive-go/internal/api"
 	"prime-send-receive-go/internal/config"
@@ -25,9 +27,10 @@ func main() {
 		log.Fatalf("Failed to initialize logger: %v", err)
 	}
 	defer func(logger *zap.Logger) {
-		err := logger.Sync()
-		if err != nil {
-
+		if err := logger.Sync(); err != nil {
+			if !isIgnorableSyncError(err) {
+				log.Printf("Failed to sync logger: %v", err)
+			}
 		}
 	}(logger)
 
@@ -88,7 +91,25 @@ func main() {
 	<-sigChan
 	logger.Info("Shutdown signal received, stopping send/receive listener...")
 
-	sendReceiveListener.Stop()
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer shutdownCancel()
 
-	logger.Info("Send/Receive listener stopped gracefully")
+	done := make(chan struct{})
+	go func() {
+		sendReceiveListener.Stop()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		logger.Info("Send/Receive listener stopped gracefully")
+	case <-shutdownCtx.Done():
+		logger.Warn("Forced shutdown after timeout")
+	}
+}
+
+func isIgnorableSyncError(err error) bool {
+	msg := err.Error()
+	return strings.Contains(msg, "sync /dev/stderr: inappropriate ioctl for device") ||
+		strings.Contains(msg, "sync /dev/stdout: inappropriate ioctl for device")
 }
