@@ -1,0 +1,62 @@
+THIRD-PARTY NOTICES
+==================
+
+This project uses the following third-party libraries and dependencies:
+
+Go Dependencies:
+----------------
+
+1. github.com/coinbase-samples/prime-sdk-go v0.5.4
+   License: MIT License
+   Description: Coinbase Prime SDK for Go
+
+2. github.com/coinbase-samples/core-go v0.2.1 (indirect)
+   License: MIT License
+   Description: Coinbase Core Go utilities
+
+3. github.com/google/uuid v1.6.0
+   License: BSD 3-Clause License
+   Description: UUID package for Go
+
+4. go.uber.org/zap v1.27.0
+   License: MIT License
+   Description: Structured, leveled logging in Go
+
+5. go.uber.org/multierr v1.10.0 (indirect)
+   License: MIT License
+   Description: Utilities for working with multiple errors
+
+6. gopkg.in/yaml.v2 v2.4.0
+   License: Apache License 2.0
+   Description: YAML support for the Go language
+
+7. github.com/gorilla/websocket v1.5.3 (indirect)
+   License: BSD 2-Clause License
+   Description: WebSocket implementation for Go
+
+8. github.com/mattn/go-sqlite3 v1.14.22
+   License: MIT License
+   Description: SQLite3 driver for Go
+
+9. github.com/shopspring/decimal v1.4.0 (indirect)
+   License: MIT License
+   Description: Arbitrary-precision fixed-point decimal type for Go
+
+10. golang.org/x/net v0.30.0
+    License: BSD 3-Clause License
+    Description: Go supplementary network libraries
+
+11. golang.org/x/text v0.24.0 (indirect)
+    License: BSD 3-Clause License
+    Description: Go text processing support
+
+Go Runtime:
+-----------
+Go 1.23.2
+License: BSD 3-Clause License
+
+Notes:
+------
+- This notice covers the direct and indirect dependencies as listed in go.mod
+- License information is based on the typical licenses used by these packages
+- For the most up-to-date license information, please refer to the individual package repositories
