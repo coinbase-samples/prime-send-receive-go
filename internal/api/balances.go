@@ -37,7 +37,6 @@ func (s *ProductionLedgerService) GetUserBalances(ctx context.Context, userId st
 		return nil, fmt.Errorf("failed to retrieve balances")
 	}
 
-	// Convert to API format
 	result := make([]UserBalance, len(balances))
 	for i, balance := range balances {
 		result[i] = UserBalance{
@@ -55,9 +54,8 @@ func (s *ProductionLedgerService) GetTransactionHistory(ctx context.Context, use
 		return nil, fmt.Errorf("user_id and asset are required")
 	}
 
-	// Validate pagination parameters
 	if limit <= 0 || limit > 100 {
-		limit = 20 // Default limit
+		limit = 20
 	}
 	if offset < 0 {
 		offset = 0
@@ -72,7 +70,6 @@ func (s *ProductionLedgerService) GetTransactionHistory(ctx context.Context, use
 		return nil, fmt.Errorf("failed to retrieve transaction history")
 	}
 
-	// Convert to API format (hide internal details)
 	result := make([]TransactionRecord, len(transactions))
 	for i, tx := range transactions {
 		result[i] = TransactionRecord{
