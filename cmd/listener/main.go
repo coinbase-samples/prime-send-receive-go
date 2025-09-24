@@ -18,7 +18,6 @@ import (
 )
 
 func main() {
-	// Load configuration from environment variables
 	cfg := config.Load()
 
 	logger, err := zap.NewProduction()
@@ -35,7 +34,7 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	logger.Info("🎯 Starting Prime Send/Receive Listener")
+	logger.Info("Starting Prime Send/Receive Listener")
 
 	dbService, err := database.NewService(ctx, logger, cfg.Database.Path)
 	if err != nil {
@@ -83,7 +82,7 @@ func main() {
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
-	logger.Info("✅ Send/Receive listener running - waiting for transactions...")
+	logger.Info("Send/Receive listener running - waiting for transactions...")
 	logger.Info("Press Ctrl+C to stop")
 
 	<-sigChan
@@ -91,5 +90,5 @@ func main() {
 
 	sendReceiveListener.Stop()
 
-	logger.Info("🛑 Send/Receive listener stopped gracefully")
+	logger.Info("Send/Receive listener stopped gracefully")
 }
