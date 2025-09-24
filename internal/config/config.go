@@ -29,7 +29,7 @@ func Load() *Config {
 		},
 		Listener: ListenerConfig{
 			LookbackWindow:  getEnvDuration("LISTENER_LOOKBACK_WINDOW", 6*time.Hour),
-			PollingInterval: getEnvDuration("LISTENER_POLLING_INTERVAL", 10*time.Second),
+			PollingInterval: getEnvDuration("LISTENER_POLLING_INTERVAL", 30*time.Second),
 			CleanupInterval: getEnvDuration("LISTENER_CLEANUP_INTERVAL", 15*time.Minute),
 			AssetsFile:      getEnvString("ASSETS_FILE", "assets.yaml"),
 		},

@@ -32,10 +32,16 @@ DATABASE_PATH=addresses.db
 
 # Listener configuration (optional)
 LISTENER_LOOKBACK_WINDOW=6h        # How far back to check for missed transactions
-LISTENER_POLLING_INTERVAL=10s      # How often to poll Prime API
+LISTENER_POLLING_INTERVAL=30s      # How often to poll Prime API
 LISTENER_CLEANUP_INTERVAL=15m      # How often to clean up processed transaction cache
 ASSETS_FILE=assets.yaml            # Asset configuration file
 ```
+
+**API Usage Notes:**
+- The system fetches up to 500 transactions per wallet per polling cycle
+- With the default 30-second polling interval, this provides adequate processing time per transaction
+- The 6-hour lookback window ensures no transactions are missed between polling cycles
+- If you exceed 500 transactions in 30 seconds, consider reducing the transaction limit
 
 ### 2. Asset Configuration
 

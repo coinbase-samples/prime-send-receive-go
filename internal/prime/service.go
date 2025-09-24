@@ -9,6 +9,7 @@ import (
 
 	"github.com/coinbase-samples/prime-sdk-go/client"
 	"github.com/coinbase-samples/prime-sdk-go/credentials"
+	"github.com/coinbase-samples/prime-sdk-go/model"
 	"github.com/coinbase-samples/prime-sdk-go/portfolios"
 	"github.com/coinbase-samples/prime-sdk-go/transactions"
 	"github.com/coinbase-samples/prime-sdk-go/wallets"
@@ -63,18 +64,18 @@ func NewService(creds *credentials.Credentials, logger *zap.Logger) (*Service, e
 
 func createCustomHttpClient() (http.Client, error) {
 	tr := &http.Transport{
-		ResponseHeaderTimeout: 30 * time.Second, // Increased from 5s to 30s
+		ResponseHeaderTimeout: 30 * time.Second,
 		Proxy:                 http.ProxyFromEnvironment,
 		DialContext: (&net.Dialer{
 			KeepAlive: 30 * time.Second,
 			DualStack: true,
-			Timeout:   15 * time.Second, // Increased from 5s to 15s
+			Timeout:   15 * time.Second,
 		}).DialContext,
 		MaxIdleConns:          10,
 		IdleConnTimeout:       90 * time.Second,
-		TLSHandshakeTimeout:   10 * time.Second, // Increased from 5s to 10s
+		TLSHandshakeTimeout:   10 * time.Second,
 		MaxIdleConnsPerHost:   5,
-		ExpectContinueTimeout: 5 * time.Second, // Increased from 2s to 5s
+		ExpectContinueTimeout: 5 * time.Second,
 	}
 
 	if err := http2.ConfigureTransport(tr); err != nil {
@@ -83,7 +84,7 @@ func createCustomHttpClient() (http.Client, error) {
 
 	return http.Client{
 		Transport: tr,
-		Timeout:   60 * time.Second, // Overall request timeout of 60s
+		Timeout:   60 * time.Second,
 	}, nil
 }
 
@@ -201,7 +202,10 @@ func (s *Service) ListWalletTransactions(ctx context.Context, portfolioId, walle
 		PortfolioId: portfolioId,
 		WalletId:    walletId,
 		Start:       startTime,
-		Types:       []string{"DEPOSIT", "WITHDRAWAL"}, // Fetch both DEPOSIT and WITHDRAWAL transactions
+		Types:       []string{"DEPOSIT", "WITHDRAWAL"},
+		Pagination: &model.PaginationParams{
+			Limit: 500,
+		},
 	}
 
 	response, err := s.transactionsSvc.ListWalletTransactions(ctx, request)
