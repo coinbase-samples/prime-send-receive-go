@@ -92,7 +92,7 @@ func generateAddresses(ctx context.Context, logger *zap.Logger) {
 	}
 	logger.Info("Asset configuration loaded", zap.Int("count", len(assetConfigs)))
 
-	dbService, err := database.NewService(ctx, logger)
+	dbService, err := database.NewService(ctx, logger, "addresses.db")
 	if err != nil {
 		logger.Fatal("Failed to create database service", zap.Error(err))
 	}

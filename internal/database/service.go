@@ -240,20 +240,17 @@ func (s *Service) ProcessWithdrawalV2(ctx context.Context, userId, asset string,
 		return fmt.Errorf("no user found for Id: %s", userId)
 	}
 
-	// Check if user has sufficient balance
+	// Get current balance for logging purposes (no validation for historical transactions)
 	currentBalance, err := s.GetUserBalanceV2(ctx, userId, asset)
 	if err != nil {
 		return fmt.Errorf("error getting current balance: %v", err)
 	}
 
-	if currentBalance < amount {
-		s.logger.Warn("Insufficient balance for withdrawal",
-			zap.String("user_id", userId),
-			zap.String("asset", asset),
-			zap.Float64("current_balance", currentBalance),
-			zap.Float64("withdrawal_amount", amount))
-		return fmt.Errorf("insufficient balance: current=%.6f, withdrawal=%.6f", currentBalance, amount)
-	}
+	s.logger.Info("Processing withdrawal information",
+		zap.String("user_id", userId),
+		zap.String("asset", asset),
+		zap.Float64("current_balance", currentBalance),
+		zap.Float64("withdrawal_amount", amount))
 
 	// Process transaction using new subledger
 	_, err = s.subledger.ProcessTransaction(ctx, user.Id, asset, "withdrawal", amount, transactionId, "", "")

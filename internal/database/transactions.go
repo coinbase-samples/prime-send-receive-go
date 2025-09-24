@@ -74,9 +74,6 @@ func (s *SubledgerService) ProcessTransaction(ctx context.Context, userId, asset
 
 	// Calculate new balance
 	newBalance := currentBalance + amount
-	if newBalance < 0 && transactionType != "deposit" {
-		return nil, fmt.Errorf("insufficient balance: current=%.8f, requested=%.8f", currentBalance, amount)
-	}
 
 	// Create transaction record
 	transactionId := uuid.New().String()
