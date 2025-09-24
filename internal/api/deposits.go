@@ -39,6 +39,12 @@ func (s *ProductionLedgerService) ProcessDeposit(ctx context.Context, address, a
 				zap.String("asset", asset),
 				zap.Float64("amount", amount),
 				zap.String("external_tx_id", externalTxId))
+		} else if strings.Contains(err.Error(), "no user found for address") {
+			s.logger.Warn("Deposit to unrecognized address",
+				zap.String("address", address),
+				zap.String("asset", asset),
+				zap.Float64("amount", amount),
+				zap.String("external_tx_id", externalTxId))
 		} else {
 			s.logger.Error("Deposit processing failed",
 				zap.String("address", address),

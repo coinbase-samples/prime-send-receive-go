@@ -252,8 +252,8 @@ func (s *Service) ProcessWithdrawalV2(ctx context.Context, userId, asset string,
 		zap.Float64("current_balance", currentBalance),
 		zap.Float64("withdrawal_amount", amount))
 
-	// Process transaction using new subledger
-	_, err = s.subledger.ProcessTransaction(ctx, user.Id, asset, "withdrawal", amount, transactionId, "", "")
+	// Process transaction using new subledger (negate amount for withdrawal)
+	_, err = s.subledger.ProcessTransaction(ctx, user.Id, asset, "withdrawal", -amount, transactionId, "", "")
 	if err != nil {
 		return fmt.Errorf("error processing withdrawal transaction: %v", err)
 	}

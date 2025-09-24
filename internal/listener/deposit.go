@@ -74,6 +74,15 @@ func (d *SendReceiveListener) processDeposit(ctx context.Context, tx PrimeTransa
 			d.markTransactionProcessed(tx.Id)
 			return nil
 		}
+		if strings.Contains(err.Error(), "no user found for address") {
+			d.logger.Warn("Deposit to unrecognized address - marking as processed to avoid repeated errors",
+				zap.String("transaction_id", tx.Id),
+				zap.String("address", lookupAddress),
+				zap.String("asset", wallet.Asset),
+				zap.Float64("amount", amount))
+			d.markTransactionProcessed(tx.Id)
+			return nil
+		}
 		return fmt.Errorf("failed to process deposit: %v", err)
 	}
 
@@ -82,6 +91,14 @@ func (d *SendReceiveListener) processDeposit(ctx context.Context, tx PrimeTransa
 		if strings.Contains(result.Error, "duplicate transaction") {
 			d.logger.Info("Duplicate transaction detected - already processed, marking as handled",
 				zap.String("transaction_id", tx.Id))
+			d.markTransactionProcessed(tx.Id)
+			return nil
+		}
+		// Check if this is an unrecognized address
+		if strings.Contains(result.Error, "no user found for address") {
+			d.logger.Warn("Deposit to unrecognized address - marking as processed to avoid repeated errors",
+				zap.String("transaction_id", tx.Id),
+				zap.String("error", result.Error))
 			d.markTransactionProcessed(tx.Id)
 			return nil
 		}
