@@ -32,12 +32,12 @@ func main() {
 	}
 	defer services.Close()
 
-	apiService := api.NewLedgerService(services.DBService, logger)
+	apiService := api.NewLedgerService(services.DbService, logger)
 
 	sendReceiveListener := listener.NewSendReceiveListener(
 		services.PrimeService,
 		apiService,
-		services.DBService,
+		services.DbService,
 		logger,
 		services.DefaultPortfolio.Id,
 		cfg.Listener.LookbackWindow,

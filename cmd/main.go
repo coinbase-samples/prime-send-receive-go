@@ -88,7 +88,7 @@ func generateAddresses(ctx context.Context, logger *zap.Logger) {
 	}
 	defer services.Close()
 
-	users, err := services.DBService.GetUsers(ctx)
+	users, err := services.DbService.GetUsers(ctx)
 	if err != nil {
 		logger.Fatal("Failed to read users from database", zap.Error(err))
 	}
@@ -105,7 +105,7 @@ func generateAddresses(ctx context.Context, logger *zap.Logger) {
 				zap.String("asset", assetConfig.Symbol),
 				zap.String("network", assetConfig.Network))
 
-			existingAddresses, err := services.DBService.GetAddresses(ctx, user.Id, assetConfig.Symbol)
+			existingAddresses, err := services.DbService.GetAddresses(ctx, user.Id, assetConfig.Symbol)
 			if err != nil {
 				logger.Error("Error checking existing addresses",
 					zap.String("user_id", user.Id),
@@ -175,7 +175,7 @@ func generateAddresses(ctx context.Context, logger *zap.Logger) {
 				zap.String("network", assetConfig.Network),
 				zap.String("address", depositAddress.Address))
 
-			storedAddress, err := services.DBService.StoreAddress(ctx, user.Id, assetConfig.Symbol, assetConfig.Network, depositAddress.Address, targetWallet.Id, depositAddress.Id)
+			storedAddress, err := services.DbService.StoreAddress(ctx, user.Id, assetConfig.Symbol, assetConfig.Network, depositAddress.Address, targetWallet.Id, depositAddress.Id)
 			if err != nil {
 				logger.Error("Error storing address to database",
 					zap.String("asset", assetConfig.Symbol),

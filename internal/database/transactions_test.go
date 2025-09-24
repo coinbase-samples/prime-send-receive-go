@@ -10,7 +10,7 @@ import (
 	"go.uber.org/zap"
 )
 
-func setupTestDB(t *testing.T) (*SubledgerService, func()) {
+func setupTestDb(t *testing.T) (*SubledgerService, func()) {
 	db, err := sql.Open("sqlite3", ":memory:")
 	if err != nil {
 		t.Fatalf("Failed to open test database: %v", err)
@@ -32,7 +32,7 @@ func setupTestDB(t *testing.T) (*SubledgerService, func()) {
 }
 
 func TestProcessTransaction_Deposit(t *testing.T) {
-	service, cleanup := setupTestDB(t)
+	service, cleanup := setupTestDb(t)
 	defer cleanup()
 
 	ctx := context.Background()
@@ -62,7 +62,7 @@ func TestProcessTransaction_Deposit(t *testing.T) {
 }
 
 func TestProcessTransaction_Withdrawal(t *testing.T) {
-	service, cleanup := setupTestDB(t)
+	service, cleanup := setupTestDb(t)
 	defer cleanup()
 
 	ctx := context.Background()
@@ -90,7 +90,7 @@ func TestProcessTransaction_Withdrawal(t *testing.T) {
 }
 
 func TestProcessTransaction_DuplicateHandling(t *testing.T) {
-	service, cleanup := setupTestDB(t)
+	service, cleanup := setupTestDb(t)
 	defer cleanup()
 
 	ctx := context.Background()
@@ -118,7 +118,7 @@ func TestProcessTransaction_DuplicateHandling(t *testing.T) {
 }
 
 func TestProcessTransaction_NegativeBalanceAllowed(t *testing.T) {
-	service, cleanup := setupTestDB(t)
+	service, cleanup := setupTestDb(t)
 	defer cleanup()
 
 	ctx := context.Background()

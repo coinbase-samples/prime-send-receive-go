@@ -14,7 +14,7 @@ import (
 
 type Services struct {
 	Logger           *zap.Logger
-	DBService        *database.Service
+	DbService        *database.Service
 	PrimeService     *prime.Service
 	DefaultPortfolio *prime.Portfolio
 }
@@ -67,15 +67,15 @@ func InitializeServices(ctx context.Context, logger *zap.Logger, dbPath string) 
 
 	return &Services{
 		Logger:           logger,
-		DBService:        dbService,
+		DbService:        dbService,
 		PrimeService:     primeService,
 		DefaultPortfolio: defaultPortfolio,
 	}, nil
 }
 
 func (cs *Services) Close() {
-	if cs.DBService != nil {
-		cs.DBService.Close()
+	if cs.DbService != nil {
+		cs.DbService.Close()
 	}
 }
 
