@@ -161,8 +161,7 @@ func (s *Service) initSchema() error {
 	}
 
 	for _, user := range users {
-		_, err := s.db.Exec("INSERT OR IGNORE INTO users (id, name, email) VALUES (?, ?, ?)",
-			user.id, user.name, user.email)
+		_, err := s.db.Exec(queryInsertUser, user.id, user.name, user.email)
 		if err != nil {
 			s.logger.Error("Failed to insert user", zap.String("name", user.name), zap.Error(err))
 		} else {

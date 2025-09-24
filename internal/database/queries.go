@@ -1,0 +1,125 @@
+package database
+
+const (
+	// User queries
+	queryGetActiveUsers = `
+		SELECT id, name, email, created_at, updated_at
+		FROM users
+		WHERE active = 1
+		ORDER BY created_at`
+
+	queryInsertUser = `
+		INSERT OR IGNORE INTO users (id, name, email) VALUES (?, ?, ?)`
+
+	// Address queries
+	queryInsertAddress = `
+		INSERT INTO addresses (id, user_id, asset, network, address, wallet_id, account_identifier)
+		VALUES (?, ?, ?, ?, ?, ?, ?)`
+
+	queryGetUserAddresses = `
+		SELECT id, user_id, asset, network, address, wallet_id, account_identifier, created_at
+		FROM addresses
+		WHERE user_id = ? AND asset = ?
+		ORDER BY created_at DESC`
+
+	queryFindUserByAddress = `
+		SELECT u.id, u.name, u.email, u.created_at, u.updated_at,
+		       a.id, a.user_id, a.asset, a.network, a.address, a.wallet_id, a.account_identifier, a.created_at
+		FROM users u
+		JOIN addresses a ON u.id = a.user_id
+		WHERE a.address = ? AND u.active = 1`
+
+	// Balance queries
+	queryGetBalance = `
+		SELECT balance 
+		FROM account_balances 
+		WHERE user_id = ? AND asset = ?`
+
+	queryGetAllUserBalances = `
+		SELECT id, user_id, asset, balance, last_transaction_id, version, updated_at
+		FROM account_balances 
+		WHERE user_id = ? AND balance != 0
+		ORDER BY asset`
+
+	queryReconcileBalance = `
+		SELECT COALESCE(SUM(amount), 0) as calculated_balance
+		FROM transactions 
+		WHERE user_id = ? AND asset = ? AND status = 'confirmed'`
+
+	// Transaction queries
+	queryCheckDuplicateTransaction = `
+		SELECT id FROM transactions WHERE external_transaction_id = ? LIMIT 1`
+
+	queryGetAccountBalance = `
+		SELECT id, balance, version 
+		FROM account_balances 
+		WHERE user_id = ? AND asset = ?`
+
+	queryInsertAccountBalance = `
+		INSERT INTO account_balances (id, user_id, asset, balance, version)
+		VALUES (?, ?, ?, ?, ?)`
+
+	queryInsertTransaction = `
+		INSERT INTO transactions (
+			id, user_id, asset, transaction_type, amount, balance_before, balance_after,
+			external_transaction_id, address, reference, status, created_at, processed_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+
+	queryUpdateAccountBalance = `
+		UPDATE account_balances 
+		SET balance = ?, last_transaction_id = ?, version = version + 1, updated_at = CURRENT_TIMESTAMP
+		WHERE user_id = ? AND asset = ? AND version = ?`
+
+	queryInsertJournalEntry = `
+		INSERT INTO journal_entries (id, transaction_id, account_type, account_id, debit_amount, credit_amount)
+		VALUES (?, ?, ?, ?, ?, ?)`
+
+	queryGetTransactionHistory = `
+		SELECT id, user_id, asset, transaction_type, amount, balance_before, balance_after,
+		       external_transaction_id, address, reference, status, created_at, processed_at
+		FROM transactions 
+		WHERE user_id = ? AND asset = ?
+		ORDER BY created_at DESC
+		LIMIT ? OFFSET ?`
+
+	queryGetMostRecentTransactionTime = `
+		SELECT MAX(created_at) 
+		FROM transactions 
+		WHERE external_transaction_id IS NOT NULL AND external_transaction_id != ''`
+
+	// Schema creation queries
+	schemaCreateUsers = `
+		CREATE TABLE IF NOT EXISTS users (
+			id TEXT PRIMARY KEY,
+			name TEXT NOT NULL,
+			email TEXT NOT NULL UNIQUE,
+			active INTEGER DEFAULT 1,
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+		)`
+
+	schemaCreateAddresses = `
+		CREATE TABLE IF NOT EXISTS addresses (
+			id TEXT PRIMARY KEY,
+			user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+			asset TEXT NOT NULL,
+			network TEXT NOT NULL,
+			address TEXT NOT NULL UNIQUE,
+			wallet_id TEXT NOT NULL,
+			account_identifier TEXT NOT NULL,
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+		)`
+
+	schemaCreateLedger = `
+		CREATE TABLE IF NOT EXISTS ledger (
+			id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+			user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+			asset TEXT NOT NULL,
+			balance REAL NOT NULL DEFAULT 0,
+			transaction_id TEXT NOT NULL,
+			transaction_type TEXT NOT NULL,
+			amount REAL NOT NULL DEFAULT 0,
+			address TEXT,
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+		)`
+)

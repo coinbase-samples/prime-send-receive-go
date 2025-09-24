@@ -24,8 +24,7 @@ func (s *SubledgerService) ProcessTransaction(ctx context.Context, userId, asset
 	// Check for duplicate external transaction Id
 	if externalTxId != "" {
 		var existingTxId string
-		duplicateQuery := `SELECT id FROM transactions WHERE external_transaction_id = ? LIMIT 1`
-		err := s.db.QueryRowContext(ctx, duplicateQuery, externalTxId).Scan(&existingTxId)
+		err := s.db.QueryRowContext(ctx, queryCheckDuplicateTransaction, externalTxId).Scan(&existingTxId)
 		if err == nil {
 			s.logger.Warn("Duplicate external transaction Id detected, skipping",
 				zap.String("external_tx_id", externalTxId),
@@ -48,23 +47,14 @@ func (s *SubledgerService) ProcessTransaction(ctx context.Context, userId, asset
 	var accountId string
 	var version int64
 
-	balanceQuery := `
-		SELECT id, balance, version 
-		FROM account_balances 
-		WHERE user_id = ? AND asset = ?
-	`
-	err = tx.QueryRowContext(ctx, balanceQuery, userId, asset).Scan(&accountId, &currentBalance, &version)
+	err = tx.QueryRowContext(ctx, queryGetAccountBalance, userId, asset).Scan(&accountId, &currentBalance, &version)
 	if err == sql.ErrNoRows {
 		// Create new account balance record
 		accountId = uuid.New().String()
 		currentBalance = 0
 		version = 1
 
-		insertQuery := `
-			INSERT INTO account_balances (id, user_id, asset, balance, version)
-			VALUES (?, ?, ?, ?, ?)
-		`
-		_, err = tx.ExecContext(ctx, insertQuery, accountId, userId, asset, 0, 1)
+		_, err = tx.ExecContext(ctx, queryInsertAccountBalance, accountId, userId, asset, 0, 1)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create account balance: %v", err)
 		}
@@ -93,13 +83,7 @@ func (s *SubledgerService) ProcessTransaction(ctx context.Context, userId, asset
 		ProcessedAt:           time.Now(),
 	}
 
-	insertTxQuery := `
-		INSERT INTO transactions (
-			id, user_id, asset, transaction_type, amount, balance_before, balance_after,
-			external_transaction_id, address, reference, status, created_at, processed_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`
-	_, err = tx.ExecContext(ctx, insertTxQuery,
+	_, err = tx.ExecContext(ctx, queryInsertTransaction,
 		transaction.Id, transaction.UserId, transaction.Asset, transaction.TransactionType,
 		transaction.Amount, transaction.BalanceBefore, transaction.BalanceAfter,
 		transaction.ExternalTransactionId, transaction.Address, transaction.Reference,
@@ -109,12 +93,7 @@ func (s *SubledgerService) ProcessTransaction(ctx context.Context, userId, asset
 	}
 
 	// Update account balance (with optimistic locking)
-	updateBalanceQuery := `
-		UPDATE account_balances 
-		SET balance = ?, last_transaction_id = ?, version = version + 1, updated_at = CURRENT_TIMESTAMP
-		WHERE user_id = ? AND asset = ? AND version = ?
-	`
-	result, err := tx.ExecContext(ctx, updateBalanceQuery, newBalance, transactionId, userId, asset, version)
+	result, err := tx.ExecContext(ctx, queryUpdateAccountBalance, newBalance, transactionId, userId, asset, version)
 	if err != nil {
 		return nil, fmt.Errorf("failed to update balance: %v", err)
 	}
@@ -197,11 +176,7 @@ func (s *SubledgerService) addJournalEntries(ctx context.Context, tx *sql.Tx, tr
 
 	for _, entry := range journalEntries {
 		entryId := uuid.New().String()
-		insertJournalQuery := `
-			INSERT INTO journal_entries (id, transaction_id, account_type, account_id, debit_amount, credit_amount)
-			VALUES (?, ?, ?, ?, ?, ?)
-		`
-		_, err := tx.ExecContext(ctx, insertJournalQuery,
+		_, err := tx.ExecContext(ctx, queryInsertJournalEntry,
 			entryId, transaction.Id, entry.accountType, entry.accountId, entry.debitAmount, entry.creditAmount)
 		if err != nil {
 			return err
@@ -219,16 +194,7 @@ func (s *SubledgerService) GetTransactionHistory(ctx context.Context, userId, as
 		zap.Int("limit", limit),
 		zap.Int("offset", offset))
 
-	query := `
-		SELECT id, user_id, asset, transaction_type, amount, balance_before, balance_after,
-		       external_transaction_id, address, reference, status, created_at, processed_at
-		FROM transactions 
-		WHERE user_id = ? AND asset = ?
-		ORDER BY created_at DESC
-		LIMIT ? OFFSET ?
-	`
-
-	rows, err := s.db.QueryContext(ctx, query, userId, asset, limit, offset)
+	rows, err := s.db.QueryContext(ctx, queryGetTransactionHistory, userId, asset, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get transaction history: %v", err)
 	}
@@ -252,13 +218,8 @@ func (s *SubledgerService) GetTransactionHistory(ctx context.Context, userId, as
 
 // GetMostRecentTransactionTime returns the most recent transaction timestamp for recovery
 func (s *SubledgerService) GetMostRecentTransactionTime(ctx context.Context) (time.Time, error) {
-	query := `
-		SELECT MAX(created_at) 
-		FROM transactions 
-		WHERE external_transaction_id IS NOT NULL AND external_transaction_id != ''
-	`
 	var timestampStr sql.NullString
-	err := s.db.QueryRowContext(ctx, query).Scan(&timestampStr)
+	err := s.db.QueryRowContext(ctx, queryGetMostRecentTransactionTime).Scan(&timestampStr)
 	if err != nil {
 		return time.Time{}, fmt.Errorf("failed to get most recent transaction time: %v", err)
 	}

@@ -10,8 +10,8 @@ import (
 	"go.uber.org/zap"
 )
 
-// ProductionLedgerService provides minimal API for production use
-type ProductionLedgerService struct {
+// LedgerService provides minimal API
+type LedgerService struct {
 	db     *database.Service
 	logger *zap.Logger
 }
@@ -43,14 +43,14 @@ type DepositResult struct {
 	Error      string  `json:"error,omitempty"`
 }
 
-func NewProductionLedgerService(db *database.Service, logger *zap.Logger) *ProductionLedgerService {
-	return &ProductionLedgerService{
+func NewLedgerService(db *database.Service, logger *zap.Logger) *LedgerService {
+	return &LedgerService{
 		db:     db,
 		logger: logger,
 	}
 }
 
-func (s *ProductionLedgerService) HealthCheck(ctx context.Context) error {
+func (s *LedgerService) HealthCheck(ctx context.Context) error {
 	_, err := s.db.GetUsers(ctx)
 	if err != nil {
 		return fmt.Errorf("database health check failed: %v", err)

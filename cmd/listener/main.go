@@ -2,77 +2,44 @@ package main
 
 import (
 	"context"
-	"log"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 	"time"
 
 	"prime-send-receive-go/internal/api"
+	"prime-send-receive-go/internal/common"
 	"prime-send-receive-go/internal/config"
-	"prime-send-receive-go/internal/database"
 	"prime-send-receive-go/internal/listener"
-	"prime-send-receive-go/internal/prime"
 
-	"github.com/coinbase-samples/prime-sdk-go/credentials"
 	"go.uber.org/zap"
 )
 
 func main() {
 	cfg := config.Load()
 
-	logger, err := zap.NewProduction()
-	if err != nil {
-		log.Fatalf("Failed to initialize logger: %v", err)
-	}
-	defer func(logger *zap.Logger) {
-		if err := logger.Sync(); err != nil {
-			if !isIgnorableSyncError(err) {
-				log.Printf("Failed to sync logger: %v\n", err)
-			}
-		}
-	}(logger)
+	logger, loggerCleanup := common.InitializeLogger()
+	defer loggerCleanup()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	logger.Info("Starting Prime Send/Receive Listener")
 
-	dbService, err := database.NewService(ctx, logger, cfg.Database.Path)
+	services, err := common.InitializeServices(ctx, logger, cfg.Database.Path)
 	if err != nil {
-		logger.Fatal("Failed to initialize database service", zap.Error(err))
+		logger.Fatal("Failed to initialize services", zap.Error(err))
 	}
-	defer dbService.Close()
+	defer services.Close()
 
-	apiService := api.NewProductionLedgerService(dbService, logger)
-
-	logger.Info("Loading Prime API credentials")
-	creds, err := credentials.ReadEnvCredentials("PRIME_CREDENTIALS")
-	if err != nil {
-		logger.Fatal("Failed to read Prime credentials", zap.Error(err))
-	}
-
-	primeService, err := prime.NewService(creds, logger)
-	if err != nil {
-		logger.Fatal("Failed to initialize Prime service", zap.Error(err))
-	}
-
-	logger.Info("Finding default portfolio")
-	defaultPortfolio, err := primeService.FindDefaultPortfolio(ctx)
-	if err != nil {
-		logger.Fatal("Failed to find default portfolio", zap.Error(err))
-	}
-	logger.Info("Using default portfolio",
-		zap.String("name", defaultPortfolio.Name),
-		zap.String("id", defaultPortfolio.Id))
+	apiService := api.NewLedgerService(services.DBService, logger)
 
 	sendReceiveListener := listener.NewSendReceiveListener(
-		primeService,
+		services.PrimeService,
 		apiService,
-		dbService,
+		services.DBService,
 		logger,
-		defaultPortfolio.Id,
+		services.DefaultPortfolio.Id,
 		cfg.Listener.LookbackWindow,
 		cfg.Listener.PollingInterval,
 		cfg.Listener.CleanupInterval,
@@ -106,10 +73,4 @@ func main() {
 	case <-shutdownCtx.Done():
 		logger.Warn("Forced shutdown after timeout")
 	}
-}
-
-func isIgnorableSyncError(err error) bool {
-	msg := err.Error()
-	return strings.Contains(msg, "sync /dev/stderr: inappropriate ioctl for device") ||
-		strings.Contains(msg, "sync /dev/stdout: inappropriate ioctl for device")
 }

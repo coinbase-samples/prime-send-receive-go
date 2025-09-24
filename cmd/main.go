@@ -5,13 +5,11 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"log"
 	"os"
 
-	"prime-send-receive-go/internal/database"
+	"prime-send-receive-go/internal/common"
 	"prime-send-receive-go/internal/prime"
 
-	"github.com/coinbase-samples/prime-sdk-go/credentials"
 	"go.uber.org/zap"
 	"gopkg.in/yaml.v2"
 )
@@ -62,16 +60,8 @@ func runInit(ctx context.Context, logger *zap.Logger) {
 func main() {
 	ctx := context.Background()
 
-	logger, err := zap.NewProduction()
-	if err != nil {
-		log.Fatalf("Failed to initialize logger: %v", err)
-	}
-	defer func(logger *zap.Logger) {
-		err := logger.Sync()
-		if err != nil {
-
-		}
-	}(logger)
+	logger, loggerCleanup := common.InitializeLogger()
+	defer loggerCleanup()
 
 	initFlag := flag.Bool("init", false, "Initialize the database")
 	flag.Parse()
@@ -92,33 +82,13 @@ func generateAddresses(ctx context.Context, logger *zap.Logger) {
 	}
 	logger.Info("Asset configuration loaded", zap.Int("count", len(assetConfigs)))
 
-	dbService, err := database.NewService(ctx, logger, "addresses.db")
+	services, err := common.InitializeServices(ctx, logger, "addresses.db")
 	if err != nil {
-		logger.Fatal("Failed to create database service", zap.Error(err))
+		logger.Fatal("Failed to initialize services", zap.Error(err))
 	}
-	defer dbService.Close()
+	defer services.Close()
 
-	logger.Info("Loading Prime API credentials")
-	creds, err := credentials.ReadEnvCredentials("PRIME_CREDENTIALS")
-	if err != nil {
-		logger.Fatal("Failed to read credentials from environment", zap.Error(err))
-	}
-
-	primeService, err := prime.NewService(creds, logger)
-	if err != nil {
-		logger.Fatal("Failed to create prime service", zap.Error(err))
-	}
-
-	logger.Info("Finding default portfolio")
-	defaultPortfolio, err := primeService.FindDefaultPortfolio(ctx)
-	if err != nil {
-		logger.Fatal("Failed to find default portfolio", zap.Error(err))
-	}
-	logger.Info("Using default portfolio",
-		zap.String("name", defaultPortfolio.Name),
-		zap.String("id", defaultPortfolio.Id))
-
-	users, err := dbService.GetUsers(ctx)
+	users, err := services.DBService.GetUsers(ctx)
 	if err != nil {
 		logger.Fatal("Failed to read users from database", zap.Error(err))
 	}
@@ -135,7 +105,7 @@ func generateAddresses(ctx context.Context, logger *zap.Logger) {
 				zap.String("asset", assetConfig.Symbol),
 				zap.String("network", assetConfig.Network))
 
-			existingAddresses, err := dbService.GetAddresses(ctx, user.Id, assetConfig.Symbol)
+			existingAddresses, err := services.DBService.GetAddresses(ctx, user.Id, assetConfig.Symbol)
 			if err != nil {
 				logger.Error("Error checking existing addresses",
 					zap.String("user_id", user.Id),
@@ -154,7 +124,7 @@ func generateAddresses(ctx context.Context, logger *zap.Logger) {
 			}
 
 			logger.Debug("Listing wallets for asset", zap.String("asset", assetConfig.Symbol))
-			wallets, err := primeService.ListWallets(ctx, defaultPortfolio.Id, "TRADING", []string{assetConfig.Symbol})
+			wallets, err := services.PrimeService.ListWallets(ctx, services.DefaultPortfolio.Id, "TRADING", []string{assetConfig.Symbol})
 			if err != nil {
 				logger.Error("Error listing wallets",
 					zap.String("asset", assetConfig.Symbol),
@@ -174,7 +144,7 @@ func generateAddresses(ctx context.Context, logger *zap.Logger) {
 				logger.Info("Creating new wallet",
 					zap.String("asset", assetConfig.Symbol),
 					zap.String("wallet_name", walletName))
-				newWallet, err := primeService.CreateWallet(ctx, defaultPortfolio.Id, walletName, assetConfig.Symbol, "TRADING")
+				newWallet, err := services.PrimeService.CreateWallet(ctx, services.DefaultPortfolio.Id, walletName, assetConfig.Symbol, "TRADING")
 				if err != nil {
 					logger.Error("Error creating wallet",
 						zap.String("asset", assetConfig.Symbol),
@@ -191,7 +161,7 @@ func generateAddresses(ctx context.Context, logger *zap.Logger) {
 				zap.String("asset", assetConfig.Symbol),
 				zap.String("network", assetConfig.Network),
 				zap.String("wallet_id", targetWallet.Id))
-			depositAddress, err := primeService.CreateDepositAddress(ctx, defaultPortfolio.Id, targetWallet.Id, assetConfig.Symbol, assetConfig.Network)
+			depositAddress, err := services.PrimeService.CreateDepositAddress(ctx, services.DefaultPortfolio.Id, targetWallet.Id, assetConfig.Symbol, assetConfig.Network)
 			if err != nil {
 				logger.Error("Error creating deposit address",
 					zap.String("asset", assetConfig.Symbol),
@@ -205,7 +175,7 @@ func generateAddresses(ctx context.Context, logger *zap.Logger) {
 				zap.String("network", assetConfig.Network),
 				zap.String("address", depositAddress.Address))
 
-			storedAddress, err := dbService.StoreAddress(ctx, user.Id, assetConfig.Symbol, assetConfig.Network, depositAddress.Address, targetWallet.Id, depositAddress.Id)
+			storedAddress, err := services.DBService.StoreAddress(ctx, user.Id, assetConfig.Symbol, assetConfig.Network, depositAddress.Address, targetWallet.Id, depositAddress.Id)
 			if err != nil {
 				logger.Error("Error storing address to database",
 					zap.String("asset", assetConfig.Symbol),

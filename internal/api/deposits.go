@@ -10,7 +10,7 @@ import (
 
 // ProcessDeposit handles incoming deposit notifications from Prime API
 // This is the main entry point for real deposit processing
-func (s *ProductionLedgerService) ProcessDeposit(ctx context.Context, address, asset string, amount float64, externalTxId string) (*DepositResult, error) {
+func (s *LedgerService) ProcessDeposit(ctx context.Context, address, asset string, amount float64, externalTxId string) (*DepositResult, error) {
 	s.logger.Info("Processing real deposit from Prime API",
 		zap.String("address", address),
 		zap.String("asset", asset),
@@ -94,7 +94,7 @@ func (s *ProductionLedgerService) ProcessDeposit(ctx context.Context, address, a
 
 // CreateDepositAddress creates a new deposit address for a user
 // This integrates with Prime API to generate real addresses
-func (s *ProductionLedgerService) CreateDepositAddress(ctx context.Context, userId, asset, network string) (string, error) {
+func (s *LedgerService) CreateDepositAddress(ctx context.Context, userId, asset, network string) (string, error) {
 	if userId == "" || asset == "" || network == "" {
 		return "", fmt.Errorf("user_id, asset, and network are required")
 	}

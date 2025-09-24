@@ -9,7 +9,7 @@ import (
 	"go.uber.org/zap"
 )
 
-func (s *ProductionLedgerService) ProcessWithdrawal(ctx context.Context, userId, asset string, amount float64, externalTxId string) (*DepositResult, error) {
+func (s *LedgerService) ProcessWithdrawal(ctx context.Context, userId, asset string, amount float64, externalTxId string) (*DepositResult, error) {
 	if userId == "" || asset == "" || amount <= 0 || externalTxId == "" {
 		return &DepositResult{
 			Success: false,

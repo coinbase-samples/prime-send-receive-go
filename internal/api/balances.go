@@ -8,7 +8,7 @@ import (
 )
 
 // GetUserBalance returns the current balance for a user and specific asset
-func (s *ProductionLedgerService) GetUserBalance(ctx context.Context, userId, asset string) (float64, error) {
+func (s *LedgerService) GetUserBalance(ctx context.Context, userId, asset string) (float64, error) {
 	if userId == "" || asset == "" {
 		return 0, fmt.Errorf("user_id and asset are required")
 	}
@@ -26,7 +26,7 @@ func (s *ProductionLedgerService) GetUserBalance(ctx context.Context, userId, as
 }
 
 // GetUserBalances returns all non-zero balances for a user
-func (s *ProductionLedgerService) GetUserBalances(ctx context.Context, userId string) ([]UserBalance, error) {
+func (s *LedgerService) GetUserBalances(ctx context.Context, userId string) ([]UserBalance, error) {
 	if userId == "" {
 		return nil, fmt.Errorf("user_id is required")
 	}
@@ -49,7 +49,7 @@ func (s *ProductionLedgerService) GetUserBalances(ctx context.Context, userId st
 }
 
 // GetTransactionHistory returns paginated transaction history for a user and asset
-func (s *ProductionLedgerService) GetTransactionHistory(ctx context.Context, userId, asset string, limit, offset int) ([]TransactionRecord, error) {
+func (s *LedgerService) GetTransactionHistory(ctx context.Context, userId, asset string, limit, offset int) ([]TransactionRecord, error) {
 	if userId == "" || asset == "" {
 		return nil, fmt.Errorf("user_id and asset are required")
 	}

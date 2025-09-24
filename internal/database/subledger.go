@@ -35,7 +35,7 @@ type Transaction struct {
 	ProcessedAt           time.Time `db:"processed_at"`
 }
 
-// SubledgerService handles production-ready subledger operations
+// SubledgerService handles subledger operations
 type SubledgerService struct {
 	db     *sql.DB
 	logger *zap.Logger

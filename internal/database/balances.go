@@ -12,14 +12,8 @@ import (
 func (s *SubledgerService) GetBalance(ctx context.Context, userId, asset string) (float64, error) {
 	s.logger.Debug("Getting balance", zap.String("user_id", userId), zap.String("asset", asset))
 
-	query := `
-		SELECT balance 
-		FROM account_balances 
-		WHERE user_id = ? AND asset = ?
-	`
-
 	var balance float64
-	err := s.db.QueryRowContext(ctx, query, userId, asset).Scan(&balance)
+	err := s.db.QueryRowContext(ctx, queryGetBalance, userId, asset).Scan(&balance)
 	if err == sql.ErrNoRows {
 		// No balance record means zero balance
 		return 0, nil
@@ -37,14 +31,7 @@ func (s *SubledgerService) GetBalance(ctx context.Context, userId, asset string)
 func (s *SubledgerService) GetAllBalances(ctx context.Context, userId string) ([]AccountBalance, error) {
 	s.logger.Debug("Getting all balances", zap.String("user_id", userId))
 
-	query := `
-		SELECT id, user_id, asset, balance, last_transaction_id, version, updated_at
-		FROM account_balances 
-		WHERE user_id = ? AND balance != 0
-		ORDER BY asset
-	`
-
-	rows, err := s.db.QueryContext(ctx, query, userId)
+	rows, err := s.db.QueryContext(ctx, queryGetAllUserBalances, userId)
 	if err != nil {
 		s.logger.Error("Failed to get all balances", zap.String("user_id", userId), zap.Error(err))
 		return nil, fmt.Errorf("failed to get all balances: %v", err)
@@ -77,13 +64,8 @@ func (s *SubledgerService) ReconcileBalance(ctx context.Context, userId, asset s
 	}
 
 	// Calculate balance from transaction history
-	query := `
-		SELECT COALESCE(SUM(amount), 0) as calculated_balance
-		FROM transactions 
-		WHERE user_id = ? AND asset = ? AND status = 'confirmed'
-	`
 	var calculatedBalance float64
-	err = s.db.QueryRowContext(ctx, query, userId, asset).Scan(&calculatedBalance)
+	err = s.db.QueryRowContext(ctx, queryReconcileBalance, userId, asset).Scan(&calculatedBalance)
 	if err != nil {
 		return fmt.Errorf("failed to calculate balance from transactions: %v", err)
 	}

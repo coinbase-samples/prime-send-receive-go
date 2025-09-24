@@ -20,12 +20,7 @@ func (s *Service) StoreAddress(ctx context.Context, userId string, asset, networ
 	// Generate UUID for the address
 	addressId := uuid.New().String()
 
-	query := `
-		INSERT INTO addresses (id, user_id, asset, network, address, wallet_id, account_identifier)
-		VALUES (?, ?, ?, ?, ?, ?, ?)
-	`
-
-	_, err := s.db.ExecContext(ctx, query, addressId, userId, asset, network, address, walletId, accountIdentifier)
+	_, err := s.db.ExecContext(ctx, queryInsertAddress, addressId, userId, asset, network, address, walletId, accountIdentifier)
 	if err != nil {
 		s.logger.Error("Failed to insert address",
 			zap.String("user_id", userId),
@@ -55,14 +50,7 @@ func (s *Service) GetAddresses(ctx context.Context, userId string, asset string)
 		zap.String("user_id", userId),
 		zap.String("asset", asset))
 
-	query := `
-		SELECT id, user_id, asset, network, address, wallet_id, account_identifier, created_at
-		FROM addresses
-		WHERE user_id = ? AND asset = ?
-		ORDER BY created_at DESC
-	`
-
-	rows, err := s.db.QueryContext(ctx, query, userId, asset)
+	rows, err := s.db.QueryContext(ctx, queryGetUserAddresses, userId, asset)
 	if err != nil {
 		s.logger.Error("Failed to query addresses",
 			zap.String("user_id", userId),
@@ -93,17 +81,9 @@ func (s *Service) GetAddresses(ctx context.Context, userId string, asset string)
 func (s *Service) FindUserByAddress(ctx context.Context, address string) (*User, *Address, error) {
 	s.logger.Debug("Finding user by address", zap.String("address", address))
 
-	query := `
-		SELECT u.id, u.name, u.email, u.created_at, u.updated_at,
-		       a.id, a.user_id, a.asset, a.network, a.address, a.wallet_id, a.account_identifier, a.created_at
-		FROM users u
-		JOIN addresses a ON u.id = a.user_id
-		WHERE a.address = ? AND u.active = 1
-	`
-
 	var user User
 	var addr Address
-	err := s.db.QueryRowContext(ctx, query, address).Scan(
+	err := s.db.QueryRowContext(ctx, queryFindUserByAddress, address).Scan(
 		&user.Id, &user.Name, &user.Email, &user.CreatedAt, &user.UpdatedAt,
 		&addr.Id, &addr.UserId, &addr.Asset, &addr.Network, &addr.Address, &addr.WalletId, &addr.AccountIdentifier, &addr.CreatedAt,
 	)

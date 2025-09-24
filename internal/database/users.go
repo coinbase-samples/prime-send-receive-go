@@ -9,14 +9,8 @@ import (
 
 func (s *Service) GetUsers(ctx context.Context) ([]User, error) {
 	s.logger.Debug("Querying active users")
-	query := `
-		SELECT id, name, email, created_at, updated_at
-		FROM users
-		WHERE active = 1
-		ORDER BY created_at
-	`
 
-	rows, err := s.db.QueryContext(ctx, query)
+	rows, err := s.db.QueryContext(ctx, queryGetActiveUsers)
 	if err != nil {
 		s.logger.Error("Failed to query users", zap.Error(err))
 		return nil, fmt.Errorf("unable to query users: %v", err)

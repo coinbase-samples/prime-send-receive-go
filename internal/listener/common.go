@@ -62,7 +62,7 @@ type PrimeTransaction struct {
 // SendReceiveListener polls Prime API for new deposits and processes them
 type SendReceiveListener struct {
 	primeService *prime.Service
-	apiService   *api.ProductionLedgerService
+	apiService   *api.LedgerService
 	dbService    *database.Service
 	logger       *zap.Logger
 
@@ -85,7 +85,7 @@ type SendReceiveListener struct {
 // NewSendReceiveListener creates a new deposit listener
 func NewSendReceiveListener(
 	primeService *prime.Service,
-	apiService *api.ProductionLedgerService,
+	apiService *api.LedgerService,
 	dbService *database.Service,
 	logger *zap.Logger,
 	portfolioId string,
