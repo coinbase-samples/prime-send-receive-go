@@ -4,13 +4,14 @@ import (
 	"context"
 	"strings"
 
-	"prime-send-receive-go/internal/database"
+	"github.com/shopspring/decimal"
+	"prime-send-receive-go/internal/database/models"
 
 	"go.uber.org/zap"
 )
 
-func (s *LedgerService) ProcessWithdrawal(ctx context.Context, userId, asset string, amount float64, externalTxId string) (*DepositResult, error) {
-	if userId == "" || asset == "" || amount <= 0 || externalTxId == "" {
+func (s *LedgerService) ProcessWithdrawal(ctx context.Context, userId, asset string, amount decimal.Decimal, externalTxId string) (*DepositResult, error) {
+	if userId == "" || asset == "" || amount.LessThanOrEqual(decimal.Zero) || externalTxId == "" {
 		return &DepositResult{
 			Success: false,
 			Error:   "invalid withdrawal parameters",
@@ -20,7 +21,7 @@ func (s *LedgerService) ProcessWithdrawal(ctx context.Context, userId, asset str
 	s.logger.Info("Processing real withdrawal from Prime API",
 		zap.String("user_id", userId),
 		zap.String("asset", asset),
-		zap.Float64("amount", amount),
+		zap.String("amount", amount.String()),
 		zap.String("external_tx_id", externalTxId))
 
 	err := s.db.ProcessWithdrawalV2(ctx, userId, asset, amount, externalTxId)
@@ -29,13 +30,13 @@ func (s *LedgerService) ProcessWithdrawal(ctx context.Context, userId, asset str
 			s.logger.Info("Duplicate withdrawal detected in API service",
 				zap.String("user_id", userId),
 				zap.String("asset", asset),
-				zap.Float64("amount", amount),
+				zap.String("amount", amount.String()),
 				zap.String("external_tx_id", externalTxId))
 		} else {
 			s.logger.Error("Withdrawal processing failed",
 				zap.String("user_id", userId),
 				zap.String("asset", asset),
-				zap.Float64("amount", amount),
+				zap.String("amount", amount.String()),
 				zap.Error(err))
 		}
 
@@ -56,7 +57,7 @@ func (s *LedgerService) ProcessWithdrawal(ctx context.Context, userId, asset str
 		}, nil
 	}
 
-	var user *database.User
+	var user *models.User
 	for _, u := range users {
 		if u.Id == userId {
 			user = &u
@@ -90,8 +91,8 @@ func (s *LedgerService) ProcessWithdrawal(ctx context.Context, userId, asset str
 		zap.String("user_id", user.Id),
 		zap.String("user_name", user.Name),
 		zap.String("asset", asset),
-		zap.Float64("amount", amount),
-		zap.Float64("new_balance", newBalance))
+		zap.String("amount", amount.String()),
+		zap.String("new_balance", newBalance.String()))
 
 	return &DepositResult{
 		Success:    true,

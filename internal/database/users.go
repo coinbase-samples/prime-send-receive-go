@@ -5,9 +5,10 @@ import (
 	"fmt"
 
 	"go.uber.org/zap"
+	"prime-send-receive-go/internal/database/models"
 )
 
-func (s *Service) GetUsers(ctx context.Context) ([]User, error) {
+func (s *Service) GetUsers(ctx context.Context) ([]models.User, error) {
 	s.logger.Debug("Querying active users")
 
 	rows, err := s.db.QueryContext(ctx, queryGetActiveUsers)
@@ -17,9 +18,9 @@ func (s *Service) GetUsers(ctx context.Context) ([]User, error) {
 	}
 	defer rows.Close()
 
-	var users []User
+	var users []models.User
 	for rows.Next() {
-		var user User
+		var user models.User
 		err := rows.Scan(&user.Id, &user.Name, &user.Email, &user.CreatedAt, &user.UpdatedAt)
 		if err != nil {
 			s.logger.Error("Failed to scan user row", zap.Error(err))

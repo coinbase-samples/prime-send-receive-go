@@ -7,6 +7,7 @@ import (
 
 	"prime-send-receive-go/internal/database"
 	"prime-send-receive-go/internal/prime"
+	"prime-send-receive-go/internal/prime/models"
 
 	"github.com/coinbase-samples/prime-sdk-go/credentials"
 	"go.uber.org/zap"
@@ -16,7 +17,7 @@ type Services struct {
 	Logger           *zap.Logger
 	DbService        *database.Service
 	PrimeService     *prime.Service
-	DefaultPortfolio *prime.Portfolio
+	DefaultPortfolio *models.Portfolio
 }
 
 func InitializeLogger() (*zap.Logger, func()) {

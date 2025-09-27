@@ -16,7 +16,11 @@ import (
 )
 
 func main() {
-	cfg := config.Load()
+	cfg, err := config.Load()
+	if err != nil {
+		logger, _ := zap.NewProduction()
+		logger.Fatal("Failed to load configuration", zap.Error(err))
+	}
 
 	logger, loggerCleanup := common.InitializeLogger()
 	defer loggerCleanup()

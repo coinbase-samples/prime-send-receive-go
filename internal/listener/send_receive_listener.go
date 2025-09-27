@@ -3,11 +3,11 @@ package listener
 import (
 	"context"
 	"fmt"
-	"strconv"
 	"sync"
 	"time"
 
 	"go.uber.org/zap"
+	"prime-send-receive-go/internal/listener/models"
 )
 
 // Start begins the deposit monitoring process
@@ -88,7 +88,7 @@ func (d *SendReceiveListener) pollWallets(ctx context.Context) {
 		wg.Add(1)
 
 		// Poll each wallet concurrently
-		go func(w WalletInfo) {
+		go func(w models.WalletInfo) {
 			defer wg.Done()
 
 			if err := d.pollWallet(ctx, w, since); err != nil {
@@ -106,7 +106,7 @@ func (d *SendReceiveListener) pollWallets(ctx context.Context) {
 }
 
 // pollWallet polls a specific wallet for new transactions
-func (d *SendReceiveListener) pollWallet(ctx context.Context, wallet WalletInfo, since time.Time) error {
+func (d *SendReceiveListener) pollWallet(ctx context.Context, wallet models.WalletInfo, since time.Time) error {
 	d.logger.Info("Polling wallet for transactions",
 		zap.String("wallet_id", wallet.Id),
 		zap.String("asset", wallet.Asset),
@@ -149,7 +149,7 @@ func (d *SendReceiveListener) pollWallet(ctx context.Context, wallet WalletInfo,
 }
 
 // processTransaction processes a single Prime transaction (deposit or withdrawal)
-func (d *SendReceiveListener) processTransaction(ctx context.Context, tx PrimeTransaction, wallet WalletInfo) error {
+func (d *SendReceiveListener) processTransaction(ctx context.Context, tx models.PrimeTransaction, wallet models.WalletInfo) error {
 	// Skip if we've already processed this transaction
 	if d.isTransactionProcessed(tx.Id) {
 		d.logger.Debug("Transaction already processed, skipping",
@@ -212,7 +212,7 @@ func (d *SendReceiveListener) performStartupRecovery(ctx context.Context) error 
 }
 
 // recoverWalletTransactions recovers transactions for a specific wallet
-func (d *SendReceiveListener) recoverWalletTransactions(ctx context.Context, wallet WalletInfo, since time.Time) (int, error) {
+func (d *SendReceiveListener) recoverWalletTransactions(ctx context.Context, wallet models.WalletInfo, since time.Time) (int, error) {
 	d.logger.Debug("Recovering transactions for wallet",
 		zap.String("wallet_id", wallet.Id),
 		zap.String("asset", wallet.Asset),
@@ -243,12 +243,7 @@ func (d *SendReceiveListener) recoverWalletTransactions(ctx context.Context, wal
 			d.logger.Info("Recovered transaction",
 				zap.String("transaction_id", tx.Id),
 				zap.String("asset", wallet.Asset),
-				zap.Float64("amount", func() float64 {
-					if amount, err := strconv.ParseFloat(tx.Amount, 64); err == nil {
-						return amount
-					}
-					return 0
-				}()))
+				zap.String("amount", tx.Amount))
 		}
 	}
 

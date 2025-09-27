@@ -8,7 +8,7 @@ import (
 	"os"
 
 	"prime-send-receive-go/internal/common"
-	"prime-send-receive-go/internal/prime"
+	"prime-send-receive-go/internal/prime/models"
 
 	"go.uber.org/zap"
 	"gopkg.in/yaml.v2"
@@ -132,7 +132,7 @@ func generateAddresses(ctx context.Context, logger *zap.Logger) {
 				continue
 			}
 
-			var targetWallet *prime.Wallet
+			var targetWallet *models.Wallet
 			if len(wallets) > 0 {
 				targetWallet = &wallets[0]
 				logger.Info("Using existing wallet",

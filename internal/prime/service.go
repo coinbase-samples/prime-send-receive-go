@@ -16,6 +16,7 @@ import (
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 	"golang.org/x/net/http2"
+	"prime-send-receive-go/internal/prime/models"
 )
 
 type Service struct {
@@ -24,25 +25,6 @@ type Service struct {
 	walletsSvc      wallets.WalletsService
 	transactionsSvc transactions.TransactionsService
 	logger          *zap.Logger
-}
-
-type Portfolio struct {
-	Id   string
-	Name string
-}
-
-type Wallet struct {
-	Id     string
-	Name   string
-	Symbol string
-	Type   string
-}
-
-type DepositAddress struct {
-	Id      string
-	Address string
-	Network string
-	Asset   string
 }
 
 func NewService(creds *credentials.Credentials, logger *zap.Logger) (*Service, error) {
@@ -88,7 +70,7 @@ func createCustomHttpClient() (http.Client, error) {
 	}, nil
 }
 
-func (s *Service) ListPortfolios(ctx context.Context) ([]Portfolio, error) {
+func (s *Service) ListPortfolios(ctx context.Context) ([]models.Portfolio, error) {
 	request := &portfolios.ListPortfoliosRequest{}
 
 	response, err := s.portfoliosSvc.ListPortfolios(ctx, request)
@@ -96,9 +78,9 @@ func (s *Service) ListPortfolios(ctx context.Context) ([]Portfolio, error) {
 		return nil, fmt.Errorf("unable to list portfolios: %v", err)
 	}
 
-	portfolioList := make([]Portfolio, len(response.Portfolios))
+	portfolioList := make([]models.Portfolio, len(response.Portfolios))
 	for i, p := range response.Portfolios {
-		portfolioList[i] = Portfolio{
+		portfolioList[i] = models.Portfolio{
 			Id:   p.Id,
 			Name: p.Name,
 		}
@@ -107,7 +89,7 @@ func (s *Service) ListPortfolios(ctx context.Context) ([]Portfolio, error) {
 	return portfolioList, nil
 }
 
-func (s *Service) FindDefaultPortfolio(ctx context.Context) (*Portfolio, error) {
+func (s *Service) FindDefaultPortfolio(ctx context.Context) (*models.Portfolio, error) {
 	portfolioList, err := s.ListPortfolios(ctx)
 	if err != nil {
 		return nil, err
@@ -122,7 +104,7 @@ func (s *Service) FindDefaultPortfolio(ctx context.Context) (*Portfolio, error) 
 	return nil, fmt.Errorf("default portfolio not found")
 }
 
-func (s *Service) ListWallets(ctx context.Context, portfolioId, walletType string, symbols []string) ([]Wallet, error) {
+func (s *Service) ListWallets(ctx context.Context, portfolioId, walletType string, symbols []string) ([]models.Wallet, error) {
 	request := &wallets.ListWalletsRequest{
 		PortfolioId: portfolioId,
 		Type:        walletType,
@@ -134,9 +116,9 @@ func (s *Service) ListWallets(ctx context.Context, portfolioId, walletType strin
 		return nil, fmt.Errorf("unable to list wallets: %v", err)
 	}
 
-	walletList := make([]Wallet, len(response.Wallets))
+	walletList := make([]models.Wallet, len(response.Wallets))
 	for i, w := range response.Wallets {
-		walletList[i] = Wallet{
+		walletList[i] = models.Wallet{
 			Id:     w.Id,
 			Name:   w.Name,
 			Symbol: w.Symbol,
@@ -147,7 +129,7 @@ func (s *Service) ListWallets(ctx context.Context, portfolioId, walletType strin
 	return walletList, nil
 }
 
-func (s *Service) CreateDepositAddress(ctx context.Context, portfolioId, walletId, asset, network string) (*DepositAddress, error) {
+func (s *Service) CreateDepositAddress(ctx context.Context, portfolioId, walletId, asset, network string) (*models.DepositAddress, error) {
 	request := &wallets.CreateWalletAddressRequest{
 		PortfolioId: portfolioId,
 		WalletId:    walletId,
@@ -159,7 +141,7 @@ func (s *Service) CreateDepositAddress(ctx context.Context, portfolioId, walletI
 		return nil, fmt.Errorf("unable to create wallet address: %v", err)
 	}
 
-	return &DepositAddress{
+	return &models.DepositAddress{
 		Id:      response.AccountIdentifier,
 		Address: response.Address,
 		Network: network,
@@ -167,7 +149,7 @@ func (s *Service) CreateDepositAddress(ctx context.Context, portfolioId, walletI
 	}, nil
 }
 
-func (s *Service) CreateWallet(ctx context.Context, portfolioId, name, symbol, walletType string) (*Wallet, error) {
+func (s *Service) CreateWallet(ctx context.Context, portfolioId, name, symbol, walletType string) (*models.Wallet, error) {
 	request := &wallets.CreateWalletRequest{
 		PortfolioId:    portfolioId,
 		Name:           name,
@@ -181,7 +163,7 @@ func (s *Service) CreateWallet(ctx context.Context, portfolioId, name, symbol, w
 		return nil, fmt.Errorf("unable to create wallet: %v", err)
 	}
 
-	return &Wallet{
+	return &models.Wallet{
 		Id:     response.ActivityId,
 		Name:   response.Name,
 		Symbol: response.Symbol,

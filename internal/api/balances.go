@@ -4,13 +4,14 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/shopspring/decimal"
 	"go.uber.org/zap"
 )
 
 // GetUserBalance returns the current balance for a user and specific asset
-func (s *LedgerService) GetUserBalance(ctx context.Context, userId, asset string) (float64, error) {
+func (s *LedgerService) GetUserBalance(ctx context.Context, userId, asset string) (decimal.Decimal, error) {
 	if userId == "" || asset == "" {
-		return 0, fmt.Errorf("user_id and asset are required")
+		return decimal.Zero, fmt.Errorf("user_id and asset are required")
 	}
 
 	balance, err := s.db.GetUserBalanceV2(ctx, userId, asset)
@@ -19,7 +20,7 @@ func (s *LedgerService) GetUserBalance(ctx context.Context, userId, asset string
 			zap.String("user_id", userId),
 			zap.String("asset", asset),
 			zap.Error(err))
-		return 0, fmt.Errorf("failed to retrieve balance")
+		return decimal.Zero, fmt.Errorf("failed to retrieve balance")
 	}
 
 	return balance, nil

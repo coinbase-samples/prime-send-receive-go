@@ -2,38 +2,9 @@ package database
 
 import (
 	"database/sql"
-	"time"
 
 	"go.uber.org/zap"
 )
-
-// AccountBalance represents current balance state (hot data)
-type AccountBalance struct {
-	Id                string    `db:"id"`
-	UserId            string    `db:"user_id"`
-	Asset             string    `db:"asset"`
-	Balance           float64   `db:"balance"`
-	LastTransactionId string    `db:"last_transaction_id"`
-	Version           int64     `db:"version"`
-	UpdatedAt         time.Time `db:"updated_at"`
-}
-
-// Transaction represents immutable transaction history (cold data)
-type Transaction struct {
-	Id                    string    `db:"id"`
-	UserId                string    `db:"user_id"`
-	Asset                 string    `db:"asset"`
-	TransactionType       string    `db:"transaction_type"`
-	Amount                float64   `db:"amount"`
-	BalanceBefore         float64   `db:"balance_before"`
-	BalanceAfter          float64   `db:"balance_after"`
-	ExternalTransactionId string    `db:"external_transaction_id"`
-	Address               string    `db:"address"`
-	Reference             string    `db:"reference"`
-	Status                string    `db:"status"`
-	CreatedAt             time.Time `db:"created_at"`
-	ProcessedAt           time.Time `db:"processed_at"`
-}
 
 // SubledgerService handles subledger operations
 type SubledgerService struct {

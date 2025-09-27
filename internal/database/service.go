@@ -8,50 +8,15 @@ import (
 
 	"github.com/google/uuid"
 	_ "github.com/mattn/go-sqlite3"
+	"github.com/shopspring/decimal"
 	"go.uber.org/zap"
+	"prime-send-receive-go/internal/database/models"
 )
 
 type Service struct {
 	db        *sql.DB
 	logger    *zap.Logger
 	subledger *SubledgerService
-}
-
-type User struct {
-	Id        string    `db:"id"`
-	Name      string    `db:"name"`
-	Email     string    `db:"email"`
-	CreatedAt time.Time `db:"created_at"`
-	UpdatedAt time.Time `db:"updated_at"`
-}
-
-type Address struct {
-	Id                string    `db:"id"`
-	UserId            string    `db:"user_id"`
-	Asset             string    `db:"asset"`
-	Network           string    `db:"network"`
-	Address           string    `db:"address"`
-	WalletId          string    `db:"wallet_id"`
-	AccountIdentifier string    `db:"account_identifier"`
-	CreatedAt         time.Time `db:"created_at"`
-}
-
-type LedgerEntry struct {
-	Id              string    `db:"id"`
-	UserId          string    `db:"user_id"`
-	Asset           string    `db:"asset"`
-	Balance         float64   `db:"balance"`
-	TransactionId   string    `db:"transaction_id"`
-	TransactionType string    `db:"transaction_type"`
-	Amount          float64   `db:"amount"`
-	Address         string    `db:"address"`
-	CreatedAt       time.Time `db:"created_at"`
-}
-
-type UserBalance struct {
-	UserId  string  `db:"user_id"`
-	Asset   string  `db:"asset"`
-	Balance float64 `db:"balance"`
 }
 
 func NewService(ctx context.Context, logger *zap.Logger, dbPath string) (*Service, error) {
@@ -174,15 +139,15 @@ func (s *Service) initSchema() error {
 
 // Subledger convenience methods
 
-func (s *Service) GetUserBalanceV2(ctx context.Context, userId string, asset string) (float64, error) {
+func (s *Service) GetUserBalanceV2(ctx context.Context, userId string, asset string) (decimal.Decimal, error) {
 	return s.subledger.GetBalance(ctx, userId, asset)
 }
 
-func (s *Service) GetAllUserBalancesV2(ctx context.Context, userId string) ([]AccountBalance, error) {
+func (s *Service) GetAllUserBalancesV2(ctx context.Context, userId string) ([]models.AccountBalance, error) {
 	return s.subledger.GetAllBalances(ctx, userId)
 }
 
-func (s *Service) ProcessDepositV2(ctx context.Context, address, asset string, amount float64, transactionId string) error {
+func (s *Service) ProcessDepositV2(ctx context.Context, address, asset string, amount decimal.Decimal, transactionId string) error {
 	// Find user by address
 	user, addr, err := s.FindUserByAddress(ctx, address)
 	if err != nil {
@@ -213,20 +178,20 @@ func (s *Service) ProcessDepositV2(ctx context.Context, address, asset string, a
 		zap.String("user_id", user.Id),
 		zap.String("user_name", user.Name),
 		zap.String("asset", asset),
-		zap.Float64("amount", amount))
+		zap.String("amount", amount.String()))
 
 	return nil
 }
 
 // ProcessWithdrawalV2 processes a withdrawal transaction for a user by user Id
-func (s *Service) ProcessWithdrawalV2(ctx context.Context, userId, asset string, amount float64, transactionId string) error {
+func (s *Service) ProcessWithdrawalV2(ctx context.Context, userId, asset string, amount decimal.Decimal, transactionId string) error {
 	// Get all users and find by Id
 	users, err := s.GetUsers(ctx)
 	if err != nil {
 		return fmt.Errorf("error getting users: %v", err)
 	}
 
-	var user *User
+	var user *models.User
 	for _, u := range users {
 		if u.Id == userId {
 			user = &u
@@ -248,11 +213,11 @@ func (s *Service) ProcessWithdrawalV2(ctx context.Context, userId, asset string,
 	s.logger.Info("Processing withdrawal information",
 		zap.String("user_id", userId),
 		zap.String("asset", asset),
-		zap.Float64("current_balance", currentBalance),
-		zap.Float64("withdrawal_amount", amount))
+		zap.String("current_balance", currentBalance.String()),
+		zap.String("withdrawal_amount", amount.String()))
 
 	// Process transaction using new subledger (negate amount for withdrawal)
-	_, err = s.subledger.ProcessTransaction(ctx, user.Id, asset, "withdrawal", -amount, transactionId, "", "")
+	_, err = s.subledger.ProcessTransaction(ctx, user.Id, asset, "withdrawal", amount.Neg(), transactionId, "", "")
 	if err != nil {
 		return fmt.Errorf("error processing withdrawal transaction: %v", err)
 	}
@@ -261,12 +226,12 @@ func (s *Service) ProcessWithdrawalV2(ctx context.Context, userId, asset string,
 		zap.String("user_id", user.Id),
 		zap.String("user_name", user.Name),
 		zap.String("asset", asset),
-		zap.Float64("amount", amount))
+		zap.String("amount", amount.String()))
 
 	return nil
 }
 
-func (s *Service) GetTransactionHistoryV2(ctx context.Context, userId, asset string, limit, offset int) ([]Transaction, error) {
+func (s *Service) GetTransactionHistoryV2(ctx context.Context, userId, asset string, limit, offset int) ([]models.Transaction, error) {
 	return s.subledger.GetTransactionHistory(ctx, userId, asset, limit, offset)
 }
 

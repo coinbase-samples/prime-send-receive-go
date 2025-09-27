@@ -11,53 +11,12 @@ import (
 
 	"prime-send-receive-go/internal/api"
 	"prime-send-receive-go/internal/database"
+	"prime-send-receive-go/internal/listener/models"
 	"prime-send-receive-go/internal/prime"
 
 	"go.uber.org/zap"
 	"gopkg.in/yaml.v2"
 )
-
-// Asset represents an asset configuration from assets.yaml
-type Asset struct {
-	Symbol  string `yaml:"symbol"`
-	Network string `yaml:"network"`
-}
-
-// AssetsConfig represents the structure of assets.yaml
-type AssetsConfig struct {
-	Assets []Asset `yaml:"assets"`
-}
-
-// WalletInfo represents a trading wallet we monitor for deposits
-type WalletInfo struct {
-	Id      string `json:"id"`
-	Asset   string `json:"asset"`
-	Network string `json:"network"`
-}
-
-// PrimeTransferInfo represents the actual transfer_to structure from Prime API
-type PrimeTransferInfo struct {
-	Type              string `json:"type"`
-	Value             string `json:"value"`
-	Address           string `json:"address"`
-	AccountIdentifier string `json:"account_identifier"`
-}
-
-// PrimeTransaction represents a transaction from Prime API with complete fields
-type PrimeTransaction struct {
-	Id             string            `json:"id"`
-	WalletId       string            `json:"wallet_id"`
-	Type           string            `json:"type"`
-	Status         string            `json:"status"`
-	Symbol         string            `json:"symbol"`
-	Amount         string            `json:"amount"`
-	CreatedAt      time.Time         `json:"created_at"`
-	CompletedAt    time.Time         `json:"completed_at"`
-	TransferTo     PrimeTransferInfo `json:"transfer_to"`
-	TransactionId  string            `json:"transaction_id"`
-	Network        string            `json:"network"`
-	IdempotencyKey string            `json:"idempotency_key"`
-}
 
 // SendReceiveListener polls Prime API for new deposits and processes them
 type SendReceiveListener struct {
@@ -75,7 +34,7 @@ type SendReceiveListener struct {
 
 	// Monitoring configuration
 	portfolioId      string
-	monitoredWallets []WalletInfo
+	monitoredWallets []models.WalletInfo
 
 	// Control channels
 	stopChan chan struct{}
@@ -130,7 +89,7 @@ func (d *SendReceiveListener) loadAssetsFromYAML(assetsFile string) ([]string, e
 	}
 
 	// Parse the YAML
-	var config AssetsConfig
+	var config models.AssetsConfig
 	if err := yaml.Unmarshal(data, &config); err != nil {
 		return nil, fmt.Errorf("failed to parse %s: %v", assetsFile, err)
 	}
@@ -158,7 +117,7 @@ func (d *SendReceiveListener) LoadMonitoredWallets(ctx context.Context, assetsFi
 		return fmt.Errorf("failed to get users: %v", err)
 	}
 
-	walletMap := make(map[string]WalletInfo)
+	walletMap := make(map[string]models.WalletInfo)
 
 	// Load assets from file
 	assets, err := d.loadAssetsFromYAML(assetsFile)
@@ -179,7 +138,7 @@ func (d *SendReceiveListener) LoadMonitoredWallets(ctx context.Context, assetsFi
 
 			for _, addr := range addresses {
 				if addr.WalletId != "" {
-					walletMap[addr.WalletId] = WalletInfo{
+					walletMap[addr.WalletId] = models.WalletInfo{
 						Id:      addr.WalletId,
 						Asset:   addr.Asset,
 						Network: addr.Network,
@@ -190,7 +149,7 @@ func (d *SendReceiveListener) LoadMonitoredWallets(ctx context.Context, assetsFi
 	}
 
 	// Convert map to slice
-	d.monitoredWallets = make([]WalletInfo, 0, len(walletMap))
+	d.monitoredWallets = make([]models.WalletInfo, 0, len(walletMap))
 	for _, wallet := range walletMap {
 		d.monitoredWallets = append(d.monitoredWallets, wallet)
 	}
@@ -203,7 +162,7 @@ func (d *SendReceiveListener) LoadMonitoredWallets(ctx context.Context, assetsFi
 }
 
 // fetchWalletTransactions calls Prime API to get wallet transactions
-func (d *SendReceiveListener) fetchWalletTransactions(ctx context.Context, walletId string, since time.Time) ([]PrimeTransaction, error) {
+func (d *SendReceiveListener) fetchWalletTransactions(ctx context.Context, walletId string, since time.Time) ([]models.PrimeTransaction, error) {
 	d.logger.Debug("Fetching wallet transactions from Prime API",
 		zap.String("wallet_id", walletId),
 		zap.Time("since", since))
@@ -215,7 +174,7 @@ func (d *SendReceiveListener) fetchWalletTransactions(ctx context.Context, walle
 	}
 
 	// Convert Prime SDK response to our internal format
-	transactions := make([]PrimeTransaction, 0)
+	transactions := make([]models.PrimeTransaction, 0)
 
 	for _, tx := range response.Transactions {
 		// Transaction times are already time.Time in the SDK
@@ -223,7 +182,7 @@ func (d *SendReceiveListener) fetchWalletTransactions(ctx context.Context, walle
 		completedAt := tx.Completed
 
 		// Convert to our internal format
-		primeTransaction := PrimeTransaction{
+		primeTransaction := models.PrimeTransaction{
 			Id:             tx.Id,
 			WalletId:       tx.WalletId,
 			Type:           tx.Type,

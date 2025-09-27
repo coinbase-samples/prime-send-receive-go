@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	_ "github.com/mattn/go-sqlite3"
+	"github.com/shopspring/decimal"
 	"go.uber.org/zap"
 )
 
@@ -23,12 +24,10 @@ func setupBalanceTestDB(t *testing.T) (*Service, func()) {
 		logger:    logger,
 	}
 
-	// Use the actual schema initialization
 	if err := subledger.InitSchema(); err != nil {
 		t.Fatalf("Failed to create subledger schema: %v", err)
 	}
 
-	// Create additional tables needed for Service
 	additionalSchema := `
 		CREATE TABLE users (
 			id TEXT PRIMARY KEY,
@@ -53,7 +52,6 @@ func setupBalanceTestDB(t *testing.T) (*Service, func()) {
 		t.Fatalf("Failed to create additional test schema: %v", err)
 	}
 
-	// Insert test user
 	_, err = db.Exec("INSERT INTO users (id, name, email) VALUES (?, ?, ?)",
 		"user1", "Test User", "test@example.com")
 	if err != nil {
@@ -80,9 +78,8 @@ func TestGetUserBalanceV2_NoBalance(t *testing.T) {
 		t.Fatalf("GetUserBalanceV2 failed: %v", err)
 	}
 
-	// Should return 0 for non-existent balance
-	if balance != 0 {
-		t.Errorf("Expected balance 0, got %f", balance)
+	if !balance.Equal(decimal.Zero) {
+		t.Errorf("Expected balance 0, got %s", balance.String())
 	}
 }
 
@@ -94,13 +91,14 @@ func TestGetUserBalanceV2_WithTransactions(t *testing.T) {
 	userId := "user1"
 	asset := "BTC"
 
-	// Create some transactions
-	_, err := service.subledger.ProcessTransaction(ctx, userId, asset, "deposit", 2.0, "tx1", "addr1", "")
+	depositAmount := decimal.NewFromFloat(2.0)
+	_, err := service.subledger.ProcessTransaction(ctx, userId, asset, "deposit", depositAmount, "tx1", "addr1", "")
 	if err != nil {
 		t.Fatalf("Failed to create deposit: %v", err)
 	}
 
-	_, err = service.subledger.ProcessTransaction(ctx, userId, asset, "withdrawal", -0.5, "tx2", "", "")
+	withdrawalAmount := decimal.NewFromFloat(-0.5)
+	_, err = service.subledger.ProcessTransaction(ctx, userId, asset, "withdrawal", withdrawalAmount, "tx2", "", "")
 	if err != nil {
 		t.Fatalf("Failed to create withdrawal: %v", err)
 	}
@@ -110,9 +108,9 @@ func TestGetUserBalanceV2_WithTransactions(t *testing.T) {
 		t.Fatalf("GetUserBalanceV2 failed: %v", err)
 	}
 
-	expectedBalance := 1.5
-	if balance != expectedBalance {
-		t.Errorf("Expected balance %f, got %f", expectedBalance, balance)
+	expectedBalance := decimal.NewFromFloat(1.5)
+	if !balance.Equal(expectedBalance) {
+		t.Errorf("Expected balance %s, got %s", expectedBalance.String(), balance.String())
 	}
 }
 
@@ -123,13 +121,14 @@ func TestGetAllUserBalancesV2(t *testing.T) {
 	ctx := context.Background()
 	userId := "user1"
 
-	// Create transactions for multiple assets
-	_, err := service.subledger.ProcessTransaction(ctx, userId, "BTC", "deposit", 1.0, "tx1", "", "")
+	btcAmount := decimal.NewFromFloat(1.0)
+	_, err := service.subledger.ProcessTransaction(ctx, userId, "BTC", "deposit", btcAmount, "tx1", "", "")
 	if err != nil {
 		t.Fatalf("Failed to create BTC deposit: %v", err)
 	}
 
-	_, err = service.subledger.ProcessTransaction(ctx, userId, "ETH", "deposit", 10.0, "tx2", "", "")
+	ethAmount := decimal.NewFromFloat(10.0)
+	_, err = service.subledger.ProcessTransaction(ctx, userId, "ETH", "deposit", ethAmount, "tx2", "", "")
 	if err != nil {
 		t.Fatalf("Failed to create ETH deposit: %v", err)
 	}
@@ -143,16 +142,17 @@ func TestGetAllUserBalancesV2(t *testing.T) {
 		t.Fatalf("Expected 2 balances, got %d", len(balances))
 	}
 
-	// Check that both assets are present
-	found := make(map[string]float64)
+	found := make(map[string]decimal.Decimal)
 	for _, balance := range balances {
 		found[balance.Asset] = balance.Balance
 	}
 
-	if found["BTC"] != 1.0 {
-		t.Errorf("Expected BTC balance 1.0, got %f", found["BTC"])
+	expectedBTC := decimal.NewFromFloat(1.0)
+	if !found["BTC"].Equal(expectedBTC) {
+		t.Errorf("Expected BTC balance %s, got %s", expectedBTC.String(), found["BTC"].String())
 	}
-	if found["ETH"] != 10.0 {
-		t.Errorf("Expected ETH balance 10.0, got %f", found["ETH"])
+	expectedETH := decimal.NewFromFloat(10.0)
+	if !found["ETH"].Equal(expectedETH) {
+		t.Errorf("Expected ETH balance %s, got %s", expectedETH.String(), found["ETH"].String())
 	}
 }

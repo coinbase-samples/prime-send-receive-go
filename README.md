@@ -128,17 +128,33 @@ addresses: user_id, asset, address, wallet_id
 ### Idempotency Key Format
 When creating withdrawals via Prime API, use this UUID idempotency key format:
 ```
-{user_id_prefix}-withdrawal-{timestamp}-{random}
+{user_id_first_segment}-{uuid_fragment_without_first_segment}
 ```
+
+**Generation Steps:**
+1. Extract first segment from user ID (before first hyphen)
+2. Generate a random UUID
+3. Replace the UUID's first segment with the user ID's first segment
 
 **Example:**
 ```bash
 # If user ID is: abc123-def4-567g-890h-ijklmnop1234
-# Use idempotency key: abc123-dd20-466b-b4c1-d0290db08715
+# Generate random UUID: 550e8400-e29b-41d4-a716-446655440000
+# Use idempotency key: abc123-e29b-41d4-a716-446655440000
+```
+
+**Implementation:**
+```bash
+# Extract user ID prefix
+USER_PREFIX=$(echo "$USER_ID" | cut -d'-' -f1)
+
+# Generate random UUID and replace first segment
+RANDOM_UUID=$(uuidgen | tr '[:upper:]' '[:lower:]')
+WITHDRAWAL_UUID="${USER_PREFIX}-$(echo "$RANDOM_UUID" | cut -d'-' -f2-)"
 ```
 
 **Why This Works:**
-The system matches withdrawals to users by comparing the first segment of the user ID with the first segment of the idempotency key. This is preferred over relying on a withdrawal trigger, as withdrawals can be rejected or fail.
+The system matches withdrawals to users by comparing the first segment of the user ID with the first segment of the idempotency key. This maintains UUID format requirements while enabling user identification. This is preferred over relying on withdrawal triggers, as withdrawals can be rejected or fail.
 
 ### Withdrawal Processing Flow
 1. **Create Withdrawal**: Submit to Prime API with proper idempotency key

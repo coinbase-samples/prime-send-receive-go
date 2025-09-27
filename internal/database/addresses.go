@@ -8,9 +8,10 @@ import (
 
 	"github.com/google/uuid"
 	"go.uber.org/zap"
+	"prime-send-receive-go/internal/database/models"
 )
 
-func (s *Service) StoreAddress(ctx context.Context, userId string, asset, network, address, walletId, accountIdentifier string) (*Address, error) {
+func (s *Service) StoreAddress(ctx context.Context, userId string, asset, network, address, walletId, accountIdentifier string) (*models.Address, error) {
 	s.logger.Info("Storing address",
 		zap.String("user_id", userId),
 		zap.String("asset", asset),
@@ -30,7 +31,7 @@ func (s *Service) StoreAddress(ctx context.Context, userId string, asset, networ
 	}
 
 	// Get the created address
-	addr := &Address{
+	addr := &models.Address{
 		Id:                addressId,
 		UserId:            userId,
 		Asset:             asset,
@@ -45,7 +46,7 @@ func (s *Service) StoreAddress(ctx context.Context, userId string, asset, networ
 	return addr, nil
 }
 
-func (s *Service) GetAddresses(ctx context.Context, userId string, asset string) ([]Address, error) {
+func (s *Service) GetAddresses(ctx context.Context, userId string, asset string) ([]models.Address, error) {
 	s.logger.Debug("Querying addresses",
 		zap.String("user_id", userId),
 		zap.String("asset", asset))
@@ -60,9 +61,9 @@ func (s *Service) GetAddresses(ctx context.Context, userId string, asset string)
 	}
 	defer rows.Close()
 
-	var addresses []Address
+	var addresses []models.Address
 	for rows.Next() {
-		var addr Address
+		var addr models.Address
 		err := rows.Scan(&addr.Id, &addr.UserId, &addr.Asset, &addr.Network, &addr.Address, &addr.WalletId, &addr.AccountIdentifier, &addr.CreatedAt)
 		if err != nil {
 			s.logger.Error("Failed to scan address row", zap.Error(err))
@@ -78,11 +79,11 @@ func (s *Service) GetAddresses(ctx context.Context, userId string, asset string)
 	return addresses, nil
 }
 
-func (s *Service) FindUserByAddress(ctx context.Context, address string) (*User, *Address, error) {
+func (s *Service) FindUserByAddress(ctx context.Context, address string) (*models.User, *models.Address, error) {
 	s.logger.Debug("Finding user by address", zap.String("address", address))
 
-	var user User
-	var addr Address
+	var user models.User
+	var addr models.Address
 	err := s.db.QueryRowContext(ctx, queryFindUserByAddress, address).Scan(
 		&user.Id, &user.Name, &user.Email, &user.CreatedAt, &user.UpdatedAt,
 		&addr.Id, &addr.UserId, &addr.Asset, &addr.Network, &addr.Address, &addr.WalletId, &addr.AccountIdentifier, &addr.CreatedAt,

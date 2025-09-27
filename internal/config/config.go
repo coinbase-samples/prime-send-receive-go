@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"strconv"
 	"time"
@@ -22,18 +23,33 @@ type ListenerConfig struct {
 	AssetsFile      string
 }
 
-func Load() *Config {
+func Load() (*Config, error) {
+	lookbackWindow, err := getEnvDuration("LISTENER_LOOKBACK_WINDOW", 6*time.Hour)
+	if err != nil {
+		return nil, err
+	}
+
+	pollingInterval, err := getEnvDuration("LISTENER_POLLING_INTERVAL", 30*time.Second)
+	if err != nil {
+		return nil, err
+	}
+
+	cleanupInterval, err := getEnvDuration("LISTENER_CLEANUP_INTERVAL", 15*time.Minute)
+	if err != nil {
+		return nil, err
+	}
+
 	return &Config{
 		Database: DatabaseConfig{
 			Path: getEnvString("DATABASE_PATH", "addresses.db"),
 		},
 		Listener: ListenerConfig{
-			LookbackWindow:  getEnvDuration("LISTENER_LOOKBACK_WINDOW", 6*time.Hour),
-			PollingInterval: getEnvDuration("LISTENER_POLLING_INTERVAL", 30*time.Second),
-			CleanupInterval: getEnvDuration("LISTENER_CLEANUP_INTERVAL", 15*time.Minute),
+			LookbackWindow:  lookbackWindow,
+			PollingInterval: pollingInterval,
+			CleanupInterval: cleanupInterval,
 			AssetsFile:      getEnvString("ASSETS_FILE", "assets.yaml"),
 		},
-	}
+	}, nil
 }
 
 func getEnvString(key, defaultValue string) string {
@@ -43,13 +59,15 @@ func getEnvString(key, defaultValue string) string {
 	return defaultValue
 }
 
-func getEnvDuration(key string, defaultValue time.Duration) time.Duration {
+func getEnvDuration(key string, defaultValue time.Duration) (time.Duration, error) {
 	if value := os.Getenv(key); value != "" {
-		if duration, err := time.ParseDuration(value); err == nil {
-			return duration
+		duration, err := time.ParseDuration(value)
+		if err != nil {
+			return 0, fmt.Errorf("invalid duration for %s: %q (%v)", key, value, err)
 		}
+		return duration, nil
 	}
-	return defaultValue
+	return defaultValue, nil
 }
 
 func getEnvInt(key string, defaultValue int) int {

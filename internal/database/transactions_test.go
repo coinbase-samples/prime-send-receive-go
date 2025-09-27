@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	_ "github.com/mattn/go-sqlite3"
+	"github.com/shopspring/decimal"
 	"go.uber.org/zap"
 )
 
@@ -38,7 +39,7 @@ func TestProcessTransaction_Deposit(t *testing.T) {
 	ctx := context.Background()
 	userId := "user1"
 	asset := "BTC"
-	amount := 1.5
+	amount := decimal.NewFromFloat(1.5)
 
 	// Process deposit
 	result, err := service.ProcessTransaction(ctx, userId, asset, "deposit", amount, "tx1", "addr1", "memo1")
@@ -53,11 +54,11 @@ func TestProcessTransaction_Deposit(t *testing.T) {
 	if result.Asset != asset {
 		t.Errorf("Expected asset %s, got %s", asset, result.Asset)
 	}
-	if result.Amount != amount {
-		t.Errorf("Expected amount %f, got %f", amount, result.Amount)
+	if !result.Amount.Equal(amount) {
+		t.Errorf("Expected amount %s, got %s", amount.String(), result.Amount.String())
 	}
-	if result.BalanceAfter != amount {
-		t.Errorf("Expected balance %f, got %f", amount, result.BalanceAfter)
+	if !result.BalanceAfter.Equal(amount) {
+		t.Errorf("Expected balance %s, got %s", amount.String(), result.BalanceAfter.String())
 	}
 }
 
@@ -70,22 +71,23 @@ func TestProcessTransaction_Withdrawal(t *testing.T) {
 	asset := "BTC"
 
 	// First, make a deposit
-	_, err := service.ProcessTransaction(ctx, userId, asset, "deposit", 2.0, "tx1", "addr1", "")
+	depositAmount := decimal.NewFromFloat(2.0)
+	_, err := service.ProcessTransaction(ctx, userId, asset, "deposit", depositAmount, "tx1", "addr1", "")
 	if err != nil {
 		t.Fatalf("Initial deposit failed: %v", err)
 	}
 
 	// Now process withdrawal (should be negative amount)
-	withdrawalAmount := -0.5
+	withdrawalAmount := decimal.NewFromFloat(-0.5)
 	result, err := service.ProcessTransaction(ctx, userId, asset, "withdrawal", withdrawalAmount, "tx2", "", "")
 	if err != nil {
 		t.Fatalf("ProcessTransaction withdrawal failed: %v", err)
 	}
 
 	// Verify result - balance should be 2.0 + (-0.5) = 1.5
-	expectedBalance := 1.5
-	if result.BalanceAfter != expectedBalance {
-		t.Errorf("Expected balance %f, got %f", expectedBalance, result.BalanceAfter)
+	expectedBalance := decimal.NewFromFloat(1.5)
+	if !result.BalanceAfter.Equal(expectedBalance) {
+		t.Errorf("Expected balance %s, got %s", expectedBalance.String(), result.BalanceAfter.String())
 	}
 }
 
@@ -96,7 +98,7 @@ func TestProcessTransaction_DuplicateHandling(t *testing.T) {
 	ctx := context.Background()
 	userId := "user1"
 	asset := "BTC"
-	amount := 1.0
+	amount := decimal.NewFromFloat(1.0)
 	txId := "duplicate-tx"
 
 	// Process transaction first time
@@ -126,14 +128,14 @@ func TestProcessTransaction_NegativeBalanceAllowed(t *testing.T) {
 	asset := "BTC"
 
 	// Process withdrawal from zero balance (should be allowed for historical transactions)
-	withdrawalAmount := -1.0
+	withdrawalAmount := decimal.NewFromFloat(-1.0)
 	result, err := service.ProcessTransaction(ctx, userId, asset, "withdrawal", withdrawalAmount, "tx1", "", "")
 	if err != nil {
 		t.Fatalf("ProcessTransaction with negative balance failed: %v", err)
 	}
 
 	// Balance should be negative
-	if result.BalanceAfter != withdrawalAmount {
-		t.Errorf("Expected negative balance %f, got %f", withdrawalAmount, result.BalanceAfter)
+	if !result.BalanceAfter.Equal(withdrawalAmount) {
+		t.Errorf("Expected negative balance %s, got %s", withdrawalAmount.String(), result.BalanceAfter.String())
 	}
 }

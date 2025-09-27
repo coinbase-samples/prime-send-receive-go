@@ -5,30 +5,38 @@ import (
 	"database/sql"
 	"fmt"
 
+	"github.com/shopspring/decimal"
 	"go.uber.org/zap"
+	"prime-send-receive-go/internal/database/models"
 )
 
 // GetBalance returns current balance for user/asset (O(1) lookup)
-func (s *SubledgerService) GetBalance(ctx context.Context, userId, asset string) (float64, error) {
+func (s *SubledgerService) GetBalance(ctx context.Context, userId, asset string) (decimal.Decimal, error) {
 	s.logger.Debug("Getting balance", zap.String("user_id", userId), zap.String("asset", asset))
 
-	var balance float64
-	err := s.db.QueryRowContext(ctx, queryGetBalance, userId, asset).Scan(&balance)
+	var balanceStr string
+	err := s.db.QueryRowContext(ctx, queryGetBalance, userId, asset).Scan(&balanceStr)
 	if err == sql.ErrNoRows {
 		// No balance record means zero balance
-		return 0, nil
+		return decimal.Zero, nil
 	}
 	if err != nil {
 		s.logger.Error("Failed to get balance", zap.String("user_id", userId), zap.String("asset", asset), zap.Error(err))
-		return 0, fmt.Errorf("failed to get balance: %v", err)
+		return decimal.Zero, fmt.Errorf("failed to get balance: %v", err)
 	}
 
-	s.logger.Debug("Retrieved balance", zap.String("user_id", userId), zap.String("asset", asset), zap.Float64("balance", balance))
+	balance, err := decimal.NewFromString(balanceStr)
+	if err != nil {
+		s.logger.Error("Failed to parse balance", zap.String("balance_str", balanceStr), zap.Error(err))
+		return decimal.Zero, fmt.Errorf("failed to parse balance: %v", err)
+	}
+
+	s.logger.Debug("Retrieved balance", zap.String("user_id", userId), zap.String("asset", asset), zap.String("balance", balance.String()))
 	return balance, nil
 }
 
 // GetAllBalances returns all non-zero balances for a user
-func (s *SubledgerService) GetAllBalances(ctx context.Context, userId string) ([]AccountBalance, error) {
+func (s *SubledgerService) GetAllBalances(ctx context.Context, userId string) ([]models.AccountBalance, error) {
 	s.logger.Debug("Getting all balances", zap.String("user_id", userId))
 
 	rows, err := s.db.QueryContext(ctx, queryGetAllUserBalances, userId)
@@ -38,14 +46,21 @@ func (s *SubledgerService) GetAllBalances(ctx context.Context, userId string) ([
 	}
 	defer rows.Close()
 
-	var balances []AccountBalance
+	var balances []models.AccountBalance
 	for rows.Next() {
-		var balance AccountBalance
-		err := rows.Scan(&balance.Id, &balance.UserId, &balance.Asset, &balance.Balance,
+		var balance models.AccountBalance
+		var balanceStr string
+		err := rows.Scan(&balance.Id, &balance.UserId, &balance.Asset, &balanceStr,
 			&balance.LastTransactionId, &balance.Version, &balance.UpdatedAt)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan balance: %v", err)
 		}
+
+		balance.Balance, err = decimal.NewFromString(balanceStr)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse balance '%s': %v", balanceStr, err)
+		}
+
 		balances = append(balances, balance)
 	}
 
@@ -64,34 +79,31 @@ func (s *SubledgerService) ReconcileBalance(ctx context.Context, userId, asset s
 	}
 
 	// Calculate balance from transaction history
-	var calculatedBalance float64
-	err = s.db.QueryRowContext(ctx, queryReconcileBalance, userId, asset).Scan(&calculatedBalance)
+	var calculatedBalanceStr string
+	err = s.db.QueryRowContext(ctx, queryReconcileBalance, userId, asset).Scan(&calculatedBalanceStr)
 	if err != nil {
 		return fmt.Errorf("failed to calculate balance from transactions: %v", err)
 	}
 
-	// Check if balances match (with small tolerance for floating point precision)
-	tolerance := 0.00000001
-	if abs(currentBalance-calculatedBalance) > tolerance {
+	calculatedBalance, err := decimal.NewFromString(calculatedBalanceStr)
+	if err != nil {
+		return fmt.Errorf("failed to parse calculated balance '%s': %v", calculatedBalanceStr, err)
+	}
+
+	// Check if balances match (exact decimal comparison)
+	if !currentBalance.Equal(calculatedBalance) {
 		s.logger.Error("Balance reconciliation failed",
 			zap.String("user_id", userId),
 			zap.String("asset", asset),
-			zap.Float64("current_balance", currentBalance),
-			zap.Float64("calculated_balance", calculatedBalance),
-			zap.Float64("difference", currentBalance-calculatedBalance))
-		return fmt.Errorf("balance mismatch: current=%.8f, calculated=%.8f", currentBalance, calculatedBalance)
+			zap.String("current_balance", currentBalance.String()),
+			zap.String("calculated_balance", calculatedBalance.String()),
+			zap.String("difference", currentBalance.Sub(calculatedBalance).String()))
+		return fmt.Errorf("balance mismatch: current=%s, calculated=%s", currentBalance.String(), calculatedBalance.String())
 	}
 
 	s.logger.Info("Balance reconciliation successful",
 		zap.String("user_id", userId),
 		zap.String("asset", asset),
-		zap.Float64("balance", currentBalance))
+		zap.String("balance", currentBalance.String()))
 	return nil
-}
-
-func abs(x float64) float64 {
-	if x < 0 {
-		return -x
-	}
-	return x
 }

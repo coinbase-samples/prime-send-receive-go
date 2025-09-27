@@ -3,15 +3,16 @@ package listener
 import (
 	"context"
 	"fmt"
-	"strconv"
 	"strings"
 	"time"
 
+	"github.com/shopspring/decimal"
 	"go.uber.org/zap"
+	"prime-send-receive-go/internal/listener/models"
 )
 
 // processDeposit processes a deposit transaction
-func (d *SendReceiveListener) processDeposit(ctx context.Context, tx PrimeTransaction, wallet WalletInfo) error {
+func (d *SendReceiveListener) processDeposit(ctx context.Context, tx models.PrimeTransaction, wallet models.WalletInfo) error {
 	if tx.Status != "TRANSACTION_IMPORTED" {
 		d.logger.Debug("Skipping non-imported deposit - waiting for completion",
 			zap.String("transaction_id", tx.Id),
@@ -22,15 +23,15 @@ func (d *SendReceiveListener) processDeposit(ctx context.Context, tx PrimeTransa
 		return nil
 	}
 
-	amount, err := strconv.ParseFloat(tx.Amount, 64)
+	amount, err := decimal.NewFromString(tx.Amount)
 	if err != nil {
 		return fmt.Errorf("invalid amount: %v", err)
 	}
 
-	if amount <= 0 {
+	if amount.LessThanOrEqual(decimal.Zero) {
 		d.logger.Debug("Skipping zero/negative amount transaction",
 			zap.String("transaction_id", tx.Id),
-			zap.Float64("amount", amount))
+			zap.String("amount", amount.String()))
 		return nil
 	}
 
@@ -62,7 +63,7 @@ func (d *SendReceiveListener) processDeposit(ctx context.Context, tx PrimeTransa
 		zap.String("deposit_address", tx.TransferTo.Address),
 		zap.String("account_identifier", tx.TransferTo.AccountIdentifier),
 		zap.String("asset", wallet.Asset),
-		zap.Float64("amount", amount),
+		zap.String("amount", amount.String()),
 		zap.Time("created_at", tx.CreatedAt),
 		zap.Time("completed_at", tx.CompletedAt))
 
@@ -79,7 +80,7 @@ func (d *SendReceiveListener) processDeposit(ctx context.Context, tx PrimeTransa
 				zap.String("transaction_id", tx.Id),
 				zap.String("address", lookupAddress),
 				zap.String("asset", wallet.Asset),
-				zap.Float64("amount", amount))
+				zap.String("amount", amount.String()))
 			d.markTransactionProcessed(tx.Id)
 			return nil
 		}
@@ -114,8 +115,8 @@ func (d *SendReceiveListener) processDeposit(ctx context.Context, tx PrimeTransa
 		zap.String("transaction_id", tx.Id),
 		zap.String("user_id", result.UserId),
 		zap.String("asset", result.Asset),
-		zap.Float64("amount", result.Amount),
-		zap.Float64("new_balance", result.NewBalance),
+		zap.String("amount", result.Amount.String()),
+		zap.String("new_balance", result.NewBalance.String()),
 		zap.Time("processed_at", time.Now()))
 
 	return nil
