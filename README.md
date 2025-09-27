@@ -76,7 +76,7 @@ INSERT INTO users (name, email) VALUES
 
 Generate deposit addresses for provided users:
 ```bash
-go run cmd/main.go
+go run cmd/setup/main.go
 ```
 
 This will:
