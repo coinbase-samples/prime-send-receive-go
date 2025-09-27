@@ -30,7 +30,6 @@ func (d *SendReceiveListener) Start(ctx context.Context, assetsFile string) erro
 		return fmt.Errorf("startup recovery failed: %v", err)
 	}
 
-	// Start background goroutines
 	go d.pollLoop(ctx)
 	go d.cleanupLoop(ctx)
 
@@ -56,7 +55,6 @@ func (d *SendReceiveListener) pollLoop(ctx context.Context) {
 	ticker := time.NewTicker(d.pollingInterval)
 	defer ticker.Stop()
 
-	// Do initial poll
 	d.pollWallets(ctx)
 
 	for {
@@ -150,14 +148,12 @@ func (d *SendReceiveListener) pollWallet(ctx context.Context, wallet models.Wall
 
 // processTransaction processes a single Prime transaction (deposit or withdrawal)
 func (d *SendReceiveListener) processTransaction(ctx context.Context, tx models.PrimeTransaction, wallet models.WalletInfo) error {
-	// Skip if we've already processed this transaction
 	if d.isTransactionProcessed(tx.Id) {
 		d.logger.Debug("Transaction already processed, skipping",
 			zap.String("transaction_id", tx.Id))
 		return nil
 	}
 
-	// Process both deposits and withdrawals
 	if tx.Type == "DEPOSIT" {
 		return d.processDeposit(ctx, tx, wallet)
 	} else if tx.Type == "WITHDRAWAL" {
@@ -180,7 +176,6 @@ func (d *SendReceiveListener) performStartupRecovery(ctx context.Context) error 
 		return fmt.Errorf("failed to get most recent transaction time: %v", err)
 	}
 
-	// Calculate recovery window: 2 hours before now to catch any missed recent transactions
 	now := time.Now().UTC() // Ensure we work in UTC
 	recoveryStart := now.Add(-d.lookbackWindow)
 
@@ -192,6 +187,7 @@ func (d *SendReceiveListener) performStartupRecovery(ctx context.Context) error 
 
 	// Poll all wallets for transactions in the recovery window
 	var totalRecovered int
+	var failedWallets []string
 	for _, wallet := range d.monitoredWallets {
 		recovered, err := d.recoverWalletTransactions(ctx, wallet, recoveryStart)
 		if err != nil {
@@ -199,14 +195,31 @@ func (d *SendReceiveListener) performStartupRecovery(ctx context.Context) error 
 				zap.String("wallet_id", wallet.Id),
 				zap.String("asset", wallet.Asset),
 				zap.Error(err))
+			failedWallets = append(failedWallets, fmt.Sprintf("%s(%s)", wallet.Asset, wallet.Id))
 			// Continue with other wallets
 			continue
 		}
 		totalRecovered += recovered
 	}
 
-	d.logger.Info("Startup recovery completed",
-		zap.Int("total_transactions_recovered", totalRecovered))
+	// Log summary with warnings if some wallets failed
+	if len(failedWallets) > 0 {
+		d.logger.Warn("Startup recovery completed with some failures",
+			zap.Int("total_transactions_recovered", totalRecovered),
+			zap.Int("total_wallets", len(d.monitoredWallets)),
+			zap.Int("failed_wallets", len(failedWallets)),
+			zap.Strings("failed_wallet_details", failedWallets))
+
+		// If more than half the wallets failed, consider this a critical issue
+		if len(failedWallets) > len(d.monitoredWallets)/2 {
+			return fmt.Errorf("recovery failed for majority of wallets (%d/%d): %v",
+				len(failedWallets), len(d.monitoredWallets), failedWallets)
+		}
+	} else {
+		d.logger.Info("Startup recovery completed successfully",
+			zap.Int("total_transactions_recovered", totalRecovered),
+			zap.Int("total_wallets", len(d.monitoredWallets)))
+	}
 
 	return nil
 }

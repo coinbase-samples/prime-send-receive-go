@@ -2,17 +2,6 @@ package models
 
 import "time"
 
-// Asset represents an asset configuration from assets.yaml
-type Asset struct {
-	Symbol  string `yaml:"symbol"`
-	Network string `yaml:"network"`
-}
-
-// AssetsConfig represents the structure of assets.yaml
-type AssetsConfig struct {
-	Assets []Asset `yaml:"assets"`
-}
-
 // WalletInfo represents a trading wallet we monitor for deposits
 type WalletInfo struct {
 	Id      string `json:"id"`

@@ -26,16 +26,39 @@ func NewService(ctx context.Context, logger *zap.Logger, dbPath string) (*Servic
 		return nil, fmt.Errorf("unable to open database: %v", err)
 	}
 
+	// Set connection timeouts and limits
+	db.SetMaxOpenConns(25)
+	db.SetMaxIdleConns(5)
+	db.SetConnMaxLifetime(5 * time.Minute)
+	db.SetConnMaxIdleTime(30 * time.Second)
+
+	// Test connection with timeout
+	pingCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	if err := db.PingContext(pingCtx); err != nil {
+		err := db.Close()
+		if err != nil {
+			return nil, err
+		}
+		return nil, fmt.Errorf("unable to ping database: %v", err)
+	}
+
 	subledger := NewSubledgerService(db, logger)
 	service := &Service{db: db, logger: logger, subledger: subledger}
 	if err := service.initSchema(); err != nil {
-		db.Close()
+		err := db.Close()
+		if err != nil {
+			return nil, err
+		}
 		return nil, fmt.Errorf("unable to initialize schema: %v", err)
 	}
 
 	// Initialize subledger schema
 	if err := subledger.InitSchema(); err != nil {
-		db.Close()
+		err := db.Close()
+		if err != nil {
+			return nil, err
+		}
 		return nil, fmt.Errorf("unable to initialize subledger schema: %v", err)
 	}
 
@@ -44,7 +67,10 @@ func NewService(ctx context.Context, logger *zap.Logger, dbPath string) (*Servic
 }
 
 func (s *Service) Close() {
-	s.db.Close()
+	err := s.db.Close()
+	if err != nil {
+		return
+	}
 }
 
 func (s *Service) initSchema() error {
@@ -163,23 +189,10 @@ func (s *Service) ProcessDeposit(ctx context.Context, address, asset string, amo
 
 // ProcessWithdrawal processes a withdrawal transaction for a user by user Id
 func (s *Service) ProcessWithdrawal(ctx context.Context, userId, asset string, amount decimal.Decimal, transactionId string) error {
-	// Get all users and find by Id
-	users, err := s.GetUsers(ctx)
+	user, err := s.GetUserById(ctx, userId)
 	if err != nil {
-		return fmt.Errorf("error getting users: %v", err)
-	}
-
-	var user *models.User
-	for _, u := range users {
-		if u.Id == userId {
-			user = &u
-			break
-		}
-	}
-
-	if user == nil {
 		s.logger.Warn("Withdrawal for unknown user", zap.String("user_id", userId))
-		return fmt.Errorf("no user found for Id: %s", userId)
+		return fmt.Errorf("error getting user: %v", err)
 	}
 
 	// Get current balance for logging purposes (no validation for historical transactions)

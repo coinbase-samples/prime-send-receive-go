@@ -11,40 +11,7 @@ import (
 	"prime-send-receive-go/internal/prime/models"
 
 	"go.uber.org/zap"
-	"gopkg.in/yaml.v2"
 )
-
-type AssetConfig struct {
-	Symbol  string `yaml:"symbol"`
-	Network string `yaml:"network"`
-}
-
-type AssetsConfig struct {
-	Assets []AssetConfig `yaml:"assets"`
-}
-
-func loadAssetConfig() ([]AssetConfig, error) {
-	data, err := os.ReadFile("assets.yaml")
-	if err != nil {
-		return nil, fmt.Errorf("unable to read assets.yaml: %v", err)
-	}
-
-	var config AssetsConfig
-	if err := yaml.Unmarshal(data, &config); err != nil {
-		return nil, fmt.Errorf("unable to parse assets.yaml: %v", err)
-	}
-
-	for i, asset := range config.Assets {
-		if asset.Symbol == "" {
-			return nil, fmt.Errorf("asset at index %d missing symbol", i)
-		}
-		if asset.Network == "" {
-			return nil, fmt.Errorf("asset at index %d missing network", i)
-		}
-	}
-
-	return config.Assets, nil
-}
 
 func runInit(ctx context.Context, logger *zap.Logger) {
 	logger.Info("🚀 Initializing database and generating addresses")
@@ -76,13 +43,17 @@ func main() {
 
 func generateAddresses(ctx context.Context, logger *zap.Logger) {
 	logger.Info("Loading asset configuration")
-	assetConfigs, err := loadAssetConfig()
+	assetConfigs, err := common.LoadAssetConfig("assets.yaml")
 	if err != nil {
 		logger.Fatal("Failed to load asset config", zap.Error(err))
 	}
 	logger.Info("Asset configuration loaded", zap.Int("count", len(assetConfigs)))
 
-	services, err := common.InitializeServices(ctx, logger, "addresses.db")
+	dbPath := os.Getenv("DATABASE_PATH")
+	if dbPath == "" {
+		dbPath = "addresses.db"
+	}
+	services, err := common.InitializeServices(ctx, logger, dbPath)
 	if err != nil {
 		logger.Fatal("Failed to initialize services", zap.Error(err))
 	}
@@ -92,6 +63,9 @@ func generateAddresses(ctx context.Context, logger *zap.Logger) {
 	if err != nil {
 		logger.Fatal("Failed to read users from database", zap.Error(err))
 	}
+
+	var totalAddresses, failedAddresses int
+	var failedAssets []string
 
 	for _, user := range users {
 		logger.Info("Processing user",
@@ -111,6 +85,8 @@ func generateAddresses(ctx context.Context, logger *zap.Logger) {
 					zap.String("user_id", user.Id),
 					zap.String("asset", assetConfig.Symbol),
 					zap.Error(err))
+				failedAddresses++
+				failedAssets = append(failedAssets, fmt.Sprintf("%s/%s", user.Name, assetConfig.Symbol))
 				continue
 			}
 
@@ -181,11 +157,14 @@ func generateAddresses(ctx context.Context, logger *zap.Logger) {
 					zap.String("asset", assetConfig.Symbol),
 					zap.String("address", depositAddress.Address),
 					zap.Error(err))
+				failedAddresses++
+				failedAssets = append(failedAssets, fmt.Sprintf("%s/%s", user.Name, assetConfig.Symbol))
 			} else {
 				logger.Info("Stored address to database",
 					zap.String("id", storedAddress.Id),
 					zap.String("asset", assetConfig.Symbol),
 					zap.String("address", depositAddress.Address))
+				totalAddresses++
 			}
 
 			addressOutput, err := json.MarshalIndent(depositAddress, "", "  ")
@@ -197,5 +176,14 @@ func generateAddresses(ctx context.Context, logger *zap.Logger) {
 		}
 	}
 
-	logger.Info("Address generation complete")
+	// Log summary
+	if failedAddresses > 0 {
+		logger.Warn("Address generation completed with some failures",
+			zap.Int("total_addresses_created", totalAddresses),
+			zap.Int("failed_addresses", failedAddresses),
+			zap.Strings("failed_user_assets", failedAssets))
+	} else {
+		logger.Info("Address generation completed successfully",
+			zap.Int("total_addresses_created", totalAddresses))
+	}
 }

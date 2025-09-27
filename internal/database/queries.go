@@ -11,6 +11,11 @@ const (
 	queryInsertUser = `
 		INSERT OR IGNORE INTO users (id, name, email) VALUES (?, ?, ?)`
 
+	queryGetUserById = `
+		SELECT id, name, email, created_at, updated_at
+		FROM users
+		WHERE id = ? AND active = 1`
+
 	// Address queries
 	queryInsertAddress = `
 		INSERT INTO addresses (id, user_id, asset, network, address, wallet_id, account_identifier)

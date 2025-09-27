@@ -3,19 +3,17 @@ package listener
 import (
 	"context"
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"time"
 
 	"prime-send-receive-go/internal/api"
+	"prime-send-receive-go/internal/common"
 	"prime-send-receive-go/internal/database"
 	"prime-send-receive-go/internal/listener/models"
 	"prime-send-receive-go/internal/prime"
 
 	"go.uber.org/zap"
-	"gopkg.in/yaml.v2"
 )
 
 // SendReceiveListener polls Prime API for new deposits and processes them
@@ -67,46 +65,6 @@ func NewSendReceiveListener(
 	}
 }
 
-// loadAssetsFromYAML loads asset configuration from assets.yaml file
-func (d *SendReceiveListener) loadAssetsFromYAML(assetsFile string) ([]string, error) {
-	var assetsPath string
-	if filepath.IsAbs(assetsFile) {
-		assetsPath = assetsFile
-	} else {
-		// Get the working directory
-		wd, err := os.Getwd()
-		if err != nil {
-			return nil, fmt.Errorf("failed to get working directory: %v", err)
-		}
-		// Construct path to assets file
-		assetsPath = filepath.Join(wd, assetsFile)
-	}
-
-	// Read the YAML file
-	data, err := os.ReadFile(assetsPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read %s: %v", assetsFile, err)
-	}
-
-	// Parse the YAML
-	var config models.AssetsConfig
-	if err := yaml.Unmarshal(data, &config); err != nil {
-		return nil, fmt.Errorf("failed to parse %s: %v", assetsFile, err)
-	}
-
-	// Extract just the symbols
-	symbols := make([]string, len(config.Assets))
-	for i, asset := range config.Assets {
-		symbols[i] = asset.Symbol
-	}
-
-	d.logger.Info("Loaded assets from file",
-		zap.String("file", assetsFile),
-		zap.Strings("symbols", symbols))
-
-	return symbols, nil
-}
-
 // LoadMonitoredWallets loads the list of trading wallets from the database
 func (d *SendReceiveListener) LoadMonitoredWallets(ctx context.Context, assetsFile string) error {
 	d.logger.Info("Loading monitored wallets from database")
@@ -120,10 +78,14 @@ func (d *SendReceiveListener) LoadMonitoredWallets(ctx context.Context, assetsFi
 	walletMap := make(map[string]models.WalletInfo)
 
 	// Load assets from file
-	assets, err := d.loadAssetsFromYAML(assetsFile)
+	assets, err := common.LoadAssetSymbols(assetsFile)
 	if err != nil {
 		return fmt.Errorf("failed to load assets from YAML: %v", err)
 	}
+
+	d.logger.Info("Loaded assets from file",
+		zap.String("file", assetsFile),
+		zap.Strings("symbols", assets))
 
 	for _, user := range users {
 		for _, asset := range assets {
