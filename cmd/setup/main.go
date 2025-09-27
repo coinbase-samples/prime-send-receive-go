@@ -14,14 +14,14 @@ import (
 )
 
 func runInit(ctx context.Context, logger *zap.Logger) {
-	logger.Info("🚀 Initializing database and generating addresses")
+	logger.Info("Initializing database and generating addresses")
 
-	logger.Info("📊 Setting up SQLite database")
+	logger.Info("Setting up SQLite database")
 
-	logger.Info("🏦 Generating addresses")
+	logger.Info("Generating addresses")
 	generateAddresses(ctx, logger)
 
-	logger.Info("✅ Initialization complete")
+	logger.Info("Initialization complete")
 }
 
 func main() {
