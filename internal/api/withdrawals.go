@@ -24,7 +24,7 @@ func (s *LedgerService) ProcessWithdrawal(ctx context.Context, userId, asset str
 		zap.String("amount", amount.String()),
 		zap.String("external_tx_id", externalTxId))
 
-	err := s.db.ProcessWithdrawalV2(ctx, userId, asset, amount, externalTxId)
+	err := s.db.ProcessWithdrawal(ctx, userId, asset, amount, externalTxId)
 	if err != nil {
 		if strings.Contains(err.Error(), "duplicate transaction") {
 			s.logger.Info("Duplicate withdrawal detected in API service",
@@ -74,8 +74,7 @@ func (s *LedgerService) ProcessWithdrawal(ctx context.Context, userId, asset str
 		}, nil
 	}
 
-	// Get updated balance
-	newBalance, err := s.db.GetUserBalanceV2(ctx, userId, asset)
+	newBalance, err := s.db.GetUserBalance(ctx, userId, asset)
 	if err != nil {
 		s.logger.Error("Balance lookup failed after withdrawal processing",
 			zap.String("user_id", userId),

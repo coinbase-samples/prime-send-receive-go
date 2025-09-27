@@ -85,27 +85,6 @@ func (s *Service) initSchema() error {
 	-- Create index for created_at for sorting
 	CREATE INDEX IF NOT EXISTS idx_addresses_created_at ON addresses(created_at);
 
-	-- Create ledger table to track user balances and transactions
-	CREATE TABLE IF NOT EXISTS ledger (
-		id TEXT PRIMARY KEY,
-		user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-		asset TEXT NOT NULL,
-		balance REAL NOT NULL DEFAULT 0,
-		transaction_id TEXT,
-		transaction_type TEXT NOT NULL,
-		amount REAL NOT NULL DEFAULT 0,
-		address TEXT,
-		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-	);
-
-	-- Create index for user/asset balance lookups
-	CREATE INDEX IF NOT EXISTS idx_ledger_user_asset ON ledger(user_id, asset);
-	-- Create index for transaction_id lookups
-	CREATE INDEX IF NOT EXISTS idx_ledger_transaction_id ON ledger(transaction_id);
-	-- Create index for address lookups
-	CREATE INDEX IF NOT EXISTS idx_ledger_address ON ledger(address);
-	-- Create index for created_at for sorting
-	CREATE INDEX IF NOT EXISTS idx_ledger_created_at ON ledger(created_at);
 
 	`
 
@@ -139,15 +118,15 @@ func (s *Service) initSchema() error {
 
 // Subledger convenience methods
 
-func (s *Service) GetUserBalanceV2(ctx context.Context, userId string, asset string) (decimal.Decimal, error) {
+func (s *Service) GetUserBalance(ctx context.Context, userId string, asset string) (decimal.Decimal, error) {
 	return s.subledger.GetBalance(ctx, userId, asset)
 }
 
-func (s *Service) GetAllUserBalancesV2(ctx context.Context, userId string) ([]models.AccountBalance, error) {
+func (s *Service) GetAllUserBalances(ctx context.Context, userId string) ([]models.AccountBalance, error) {
 	return s.subledger.GetAllBalances(ctx, userId)
 }
 
-func (s *Service) ProcessDepositV2(ctx context.Context, address, asset string, amount decimal.Decimal, transactionId string) error {
+func (s *Service) ProcessDeposit(ctx context.Context, address, asset string, amount decimal.Decimal, transactionId string) error {
 	// Find user by address
 	user, addr, err := s.FindUserByAddress(ctx, address)
 	if err != nil {
@@ -168,13 +147,12 @@ func (s *Service) ProcessDepositV2(ctx context.Context, address, asset string, a
 		return fmt.Errorf("asset mismatch: expected %s, received %s", addr.Asset, asset)
 	}
 
-	// Process transaction using new subledger
 	_, err = s.subledger.ProcessTransaction(ctx, user.Id, asset, "deposit", amount, transactionId, address, "")
 	if err != nil {
 		return fmt.Errorf("error processing deposit transaction: %v", err)
 	}
 
-	s.logger.Info("Deposit processed successfully using V2 subledger",
+	s.logger.Info("Deposit processed successfully",
 		zap.String("user_id", user.Id),
 		zap.String("user_name", user.Name),
 		zap.String("asset", asset),
@@ -183,8 +161,8 @@ func (s *Service) ProcessDepositV2(ctx context.Context, address, asset string, a
 	return nil
 }
 
-// ProcessWithdrawalV2 processes a withdrawal transaction for a user by user Id
-func (s *Service) ProcessWithdrawalV2(ctx context.Context, userId, asset string, amount decimal.Decimal, transactionId string) error {
+// ProcessWithdrawal processes a withdrawal transaction for a user by user Id
+func (s *Service) ProcessWithdrawal(ctx context.Context, userId, asset string, amount decimal.Decimal, transactionId string) error {
 	// Get all users and find by Id
 	users, err := s.GetUsers(ctx)
 	if err != nil {
@@ -205,7 +183,7 @@ func (s *Service) ProcessWithdrawalV2(ctx context.Context, userId, asset string,
 	}
 
 	// Get current balance for logging purposes (no validation for historical transactions)
-	currentBalance, err := s.GetUserBalanceV2(ctx, userId, asset)
+	currentBalance, err := s.GetUserBalance(ctx, userId, asset)
 	if err != nil {
 		return fmt.Errorf("error getting current balance: %v", err)
 	}
@@ -216,13 +194,12 @@ func (s *Service) ProcessWithdrawalV2(ctx context.Context, userId, asset string,
 		zap.String("current_balance", currentBalance.String()),
 		zap.String("withdrawal_amount", amount.String()))
 
-	// Process transaction using new subledger (negate amount for withdrawal)
 	_, err = s.subledger.ProcessTransaction(ctx, user.Id, asset, "withdrawal", amount.Neg(), transactionId, "", "")
 	if err != nil {
 		return fmt.Errorf("error processing withdrawal transaction: %v", err)
 	}
 
-	s.logger.Info("Withdrawal processed successfully using V2 subledger",
+	s.logger.Info("Withdrawal processed successfully",
 		zap.String("user_id", user.Id),
 		zap.String("user_name", user.Name),
 		zap.String("asset", asset),
@@ -231,7 +208,7 @@ func (s *Service) ProcessWithdrawalV2(ctx context.Context, userId, asset string,
 	return nil
 }
 
-func (s *Service) GetTransactionHistoryV2(ctx context.Context, userId, asset string, limit, offset int) ([]models.Transaction, error) {
+func (s *Service) GetTransactionHistory(ctx context.Context, userId, asset string, limit, offset int) ([]models.Transaction, error) {
 	return s.subledger.GetTransactionHistory(ctx, userId, asset, limit, offset)
 }
 

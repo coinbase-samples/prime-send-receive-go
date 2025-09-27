@@ -86,40 +86,4 @@ const (
 		SELECT MAX(created_at) 
 		FROM transactions 
 		WHERE external_transaction_id IS NOT NULL AND external_transaction_id != ''`
-
-	// Schema creation queries
-	schemaCreateUsers = `
-		CREATE TABLE IF NOT EXISTS users (
-			id TEXT PRIMARY KEY,
-			name TEXT NOT NULL,
-			email TEXT NOT NULL UNIQUE,
-			active INTEGER DEFAULT 1,
-			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-			updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-		)`
-
-	schemaCreateAddresses = `
-		CREATE TABLE IF NOT EXISTS addresses (
-			id TEXT PRIMARY KEY,
-			user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-			asset TEXT NOT NULL,
-			network TEXT NOT NULL,
-			address TEXT NOT NULL UNIQUE,
-			wallet_id TEXT NOT NULL,
-			account_identifier TEXT NOT NULL,
-			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-		)`
-
-	schemaCreateLedger = `
-		CREATE TABLE IF NOT EXISTS ledger (
-			id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
-			user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-			asset TEXT NOT NULL,
-			balance REAL NOT NULL DEFAULT 0,
-			transaction_id TEXT NOT NULL,
-			transaction_type TEXT NOT NULL,
-			amount REAL NOT NULL DEFAULT 0,
-			address TEXT,
-			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-		)`
 )

@@ -32,7 +32,7 @@ func (s *LedgerService) ProcessDeposit(ctx context.Context, address, asset strin
 	}
 
 	// Process the deposit through subledger
-	err := s.db.ProcessDepositV2(ctx, address, asset, amount, externalTxId)
+	err := s.db.ProcessDeposit(ctx, address, asset, amount, externalTxId)
 	if err != nil {
 		if strings.Contains(err.Error(), "duplicate transaction") {
 			s.logger.Info("Duplicate transaction detected in API service",
@@ -71,7 +71,7 @@ func (s *LedgerService) ProcessDeposit(ctx context.Context, address, asset strin
 		}, nil
 	}
 
-	newBalance, err := s.db.GetUserBalanceV2(ctx, user.Id, asset)
+	newBalance, err := s.db.GetUserBalance(ctx, user.Id, asset)
 	if err != nil {
 		s.logger.Error("Failed to get updated balance", zap.Error(err))
 		newBalance = decimal.Zero

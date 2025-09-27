@@ -65,7 +65,7 @@ func setupBalanceTestDB(t *testing.T) (*Service, func()) {
 	return service, cleanup
 }
 
-func TestGetUserBalanceV2_NoBalance(t *testing.T) {
+func TestGetUserBalance_NoBalance(t *testing.T) {
 	service, cleanup := setupBalanceTestDB(t)
 	defer cleanup()
 
@@ -73,9 +73,9 @@ func TestGetUserBalanceV2_NoBalance(t *testing.T) {
 	userId := "user1"
 	asset := "BTC"
 
-	balance, err := service.GetUserBalanceV2(ctx, userId, asset)
+	balance, err := service.GetUserBalance(ctx, userId, asset)
 	if err != nil {
-		t.Fatalf("GetUserBalanceV2 failed: %v", err)
+		t.Fatalf("GetUserBalance failed: %v", err)
 	}
 
 	if !balance.Equal(decimal.Zero) {
@@ -83,7 +83,7 @@ func TestGetUserBalanceV2_NoBalance(t *testing.T) {
 	}
 }
 
-func TestGetUserBalanceV2_WithTransactions(t *testing.T) {
+func TestGetUserBalance_WithTransactions(t *testing.T) {
 	service, cleanup := setupBalanceTestDB(t)
 	defer cleanup()
 
@@ -103,9 +103,9 @@ func TestGetUserBalanceV2_WithTransactions(t *testing.T) {
 		t.Fatalf("Failed to create withdrawal: %v", err)
 	}
 
-	balance, err := service.GetUserBalanceV2(ctx, userId, asset)
+	balance, err := service.GetUserBalance(ctx, userId, asset)
 	if err != nil {
-		t.Fatalf("GetUserBalanceV2 failed: %v", err)
+		t.Fatalf("GetUserBalance failed: %v", err)
 	}
 
 	expectedBalance := decimal.NewFromFloat(1.5)
@@ -114,7 +114,7 @@ func TestGetUserBalanceV2_WithTransactions(t *testing.T) {
 	}
 }
 
-func TestGetAllUserBalancesV2(t *testing.T) {
+func TestGetAllUserBalances(t *testing.T) {
 	service, cleanup := setupBalanceTestDB(t)
 	defer cleanup()
 
@@ -133,9 +133,9 @@ func TestGetAllUserBalancesV2(t *testing.T) {
 		t.Fatalf("Failed to create ETH deposit: %v", err)
 	}
 
-	balances, err := service.GetAllUserBalancesV2(ctx, userId)
+	balances, err := service.GetAllUserBalances(ctx, userId)
 	if err != nil {
-		t.Fatalf("GetAllUserBalancesV2 failed: %v", err)
+		t.Fatalf("GetAllUserBalances failed: %v", err)
 	}
 
 	if len(balances) != 2 {

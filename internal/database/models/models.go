@@ -27,26 +27,6 @@ type Address struct {
 	CreatedAt         time.Time `db:"created_at"`
 }
 
-// LedgerEntry represents a ledger entry (legacy)
-type LedgerEntry struct {
-	Id              string          `db:"id"`
-	UserId          string          `db:"user_id"`
-	Asset           string          `db:"asset"`
-	Balance         decimal.Decimal `db:"balance"`
-	TransactionId   string          `db:"transaction_id"`
-	TransactionType string          `db:"transaction_type"`
-	Amount          decimal.Decimal `db:"amount"`
-	Address         string          `db:"address"`
-	CreatedAt       time.Time       `db:"created_at"`
-}
-
-// UserBalance represents a user's balance for a specific asset (legacy)
-type UserBalance struct {
-	UserId  string          `db:"user_id"`
-	Asset   string          `db:"asset"`
-	Balance decimal.Decimal `db:"balance"`
-}
-
 // AccountBalance represents current balance state (hot data)
 type AccountBalance struct {
 	Id                string          `db:"id"`
