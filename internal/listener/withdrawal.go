@@ -53,12 +53,12 @@ func (d *SendReceiveListener) processWithdrawal(ctx context.Context, tx models.P
 		zap.String("transaction_id", tx.Id),
 		zap.String("user_id", userId),
 		zap.String("idempotency_key", tx.IdempotencyKey),
-		zap.String("asset", wallet.Asset),
+		zap.String("asset_network", wallet.AssetNetwork),
 		zap.String("amount", amount.String()),
 		zap.Time("created_at", tx.CreatedAt),
 		zap.Time("completed_at", tx.CompletedAt))
 
-	result, err := d.apiService.ProcessWithdrawal(ctx, userId, wallet.Asset, amount, tx.Id)
+	result, err := d.apiService.ProcessWithdrawal(ctx, userId, wallet.AssetNetwork, amount, tx.Id)
 	if err != nil {
 		if strings.Contains(err.Error(), "duplicate transaction") {
 			d.logger.Info("Duplicate withdrawal detected - already processed, marking as handled",

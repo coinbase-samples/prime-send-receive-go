@@ -14,7 +14,7 @@ import (
 func (s *LedgerService) ProcessDeposit(ctx context.Context, address, asset string, amount decimal.Decimal, externalTxId string) (*DepositResult, error) {
 	s.logger.Info("Processing real deposit from Prime API",
 		zap.String("address", address),
-		zap.String("asset", asset),
+		zap.String("asset_network", asset),
 		zap.String("amount", amount.String()),
 		zap.String("external_tx_id", externalTxId))
 
@@ -22,7 +22,7 @@ func (s *LedgerService) ProcessDeposit(ctx context.Context, address, asset strin
 	if address == "" || asset == "" || amount.LessThanOrEqual(decimal.Zero) || externalTxId == "" {
 		s.logger.Error("Invalid deposit parameters",
 			zap.String("address", address),
-			zap.String("asset", asset),
+			zap.String("asset_network", asset),
 			zap.String("amount", amount.String()),
 			zap.String("external_tx_id", externalTxId))
 		return &DepositResult{
@@ -37,19 +37,19 @@ func (s *LedgerService) ProcessDeposit(ctx context.Context, address, asset strin
 		if strings.Contains(err.Error(), "duplicate transaction") {
 			s.logger.Info("Duplicate transaction detected in API service",
 				zap.String("address", address),
-				zap.String("asset", asset),
+				zap.String("asset_network", asset),
 				zap.String("amount", amount.String()),
 				zap.String("external_tx_id", externalTxId))
 		} else if strings.Contains(err.Error(), "no user found for address") {
 			s.logger.Warn("Deposit to unrecognized address",
 				zap.String("address", address),
-				zap.String("asset", asset),
+				zap.String("asset_network", asset),
 				zap.String("amount", amount.String()),
 				zap.String("external_tx_id", externalTxId))
 		} else {
 			s.logger.Error("Deposit processing failed",
 				zap.String("address", address),
-				zap.String("asset", asset),
+				zap.String("asset_network", asset),
 				zap.String("amount", amount.String()),
 				zap.Error(err))
 		}
@@ -80,7 +80,7 @@ func (s *LedgerService) ProcessDeposit(ctx context.Context, address, asset strin
 	s.logger.Info("Real deposit processed successfully",
 		zap.String("user_id", user.Id),
 		zap.String("user_name", user.Name),
-		zap.String("asset", asset),
+		zap.String("asset_network", asset),
 		zap.String("amount", amount.String()),
 		zap.String("new_balance", newBalance.String()))
 

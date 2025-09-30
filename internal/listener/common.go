@@ -77,33 +77,36 @@ func (d *SendReceiveListener) LoadMonitoredWallets(ctx context.Context, assetsFi
 
 	walletMap := make(map[string]models.WalletInfo)
 
-	// Load assets from file
-	assets, err := common.LoadAssetSymbols(assetsFile)
+	// Load asset configs from file
+	assetConfigs, err := common.LoadAssetConfig(assetsFile)
 	if err != nil {
 		return fmt.Errorf("failed to load assets from YAML: %v", err)
 	}
 
 	d.logger.Info("Loaded assets from file",
 		zap.String("file", assetsFile),
-		zap.Strings("symbols", assets))
+		zap.Int("count", len(assetConfigs)))
 
 	for _, user := range users {
-		for _, asset := range assets {
-			addresses, err := d.dbService.GetAddresses(ctx, user.Id, asset)
+		for _, assetConfig := range assetConfigs {
+			// Use original symbol for database lookup
+			addresses, err := d.dbService.GetAddresses(ctx, user.Id, assetConfig.Symbol)
 			if err != nil {
 				d.logger.Error("Failed to get addresses for user/asset",
 					zap.String("user_id", user.Id),
-					zap.String("asset", asset),
+					zap.String("asset", assetConfig.Symbol),
 					zap.Error(err))
 				continue
 			}
 
 			for _, addr := range addresses {
 				if addr.WalletId != "" {
+					// Use composite asset name for ledger operations
+					compositeAsset := fmt.Sprintf("%s-%s", assetConfig.Symbol, assetConfig.Network)
 					walletMap[addr.WalletId] = models.WalletInfo{
-						Id:      addr.WalletId,
-						Asset:   addr.Asset,
-						Network: addr.Network,
+						Id:           addr.WalletId,
+						AssetNetwork: compositeAsset,
+						Network:      assetConfig.Network,
 					}
 				}
 			}

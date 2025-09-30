@@ -12,7 +12,7 @@ import (
 
 // GetBalance returns current balance for user/asset (O(1) lookup)
 func (s *SubledgerService) GetBalance(ctx context.Context, userId, asset string) (decimal.Decimal, error) {
-	s.logger.Debug("Getting balance", zap.String("user_id", userId), zap.String("asset", asset))
+	s.logger.Debug("Getting balance", zap.String("user_id", userId), zap.String("asset_network", asset))
 
 	var balanceStr string
 	err := s.db.QueryRowContext(ctx, queryGetBalance, userId, asset).Scan(&balanceStr)
@@ -21,7 +21,7 @@ func (s *SubledgerService) GetBalance(ctx context.Context, userId, asset string)
 		return decimal.Zero, nil
 	}
 	if err != nil {
-		s.logger.Error("Failed to get balance", zap.String("user_id", userId), zap.String("asset", asset), zap.Error(err))
+		s.logger.Error("Failed to get balance", zap.String("user_id", userId), zap.String("asset_network", asset), zap.Error(err))
 		return decimal.Zero, fmt.Errorf("failed to get balance: %v", err)
 	}
 
@@ -31,7 +31,7 @@ func (s *SubledgerService) GetBalance(ctx context.Context, userId, asset string)
 		return decimal.Zero, fmt.Errorf("failed to parse balance: %v", err)
 	}
 
-	s.logger.Debug("Retrieved balance", zap.String("user_id", userId), zap.String("asset", asset), zap.String("balance", balance.String()))
+	s.logger.Debug("Retrieved balance", zap.String("user_id", userId), zap.String("asset_network", asset), zap.String("balance", balance.String()))
 	return balance, nil
 }
 
@@ -70,7 +70,7 @@ func (s *SubledgerService) GetAllBalances(ctx context.Context, userId string) ([
 
 // ReconcileBalance verifies that current balance matches sum of all transactions
 func (s *SubledgerService) ReconcileBalance(ctx context.Context, userId, asset string) error {
-	s.logger.Info("Reconciling balance", zap.String("user_id", userId), zap.String("asset", asset))
+	s.logger.Info("Reconciling balance", zap.String("user_id", userId), zap.String("asset_network", asset))
 
 	// Get current balance from account_balances table
 	currentBalance, err := s.GetBalance(ctx, userId, asset)
@@ -94,7 +94,7 @@ func (s *SubledgerService) ReconcileBalance(ctx context.Context, userId, asset s
 	if !currentBalance.Equal(calculatedBalance) {
 		s.logger.Error("Balance reconciliation failed",
 			zap.String("user_id", userId),
-			zap.String("asset", asset),
+			zap.String("asset_network", asset),
 			zap.String("current_balance", currentBalance.String()),
 			zap.String("calculated_balance", calculatedBalance.String()),
 			zap.String("difference", currentBalance.Sub(calculatedBalance).String()))
@@ -103,7 +103,7 @@ func (s *SubledgerService) ReconcileBalance(ctx context.Context, userId, asset s
 
 	s.logger.Info("Balance reconciliation successful",
 		zap.String("user_id", userId),
-		zap.String("asset", asset),
+		zap.String("asset_network", asset),
 		zap.String("balance", currentBalance.String()))
 	return nil
 }

@@ -9,7 +9,7 @@ This is a sample application; test thoroughly and verify it meets your requireme
 This system processes crypto deposits and withdrawals by monitoring Prime API transactions and maintaining user balances in a high-performance subledger.
 
 **Core Features:**
-- Deposit detection from Prime API
+- Deposit and withdrawal detection from Prime API
 - Withdrawal confirmation tracking via idempotency keys
 - Subledger with O(1) balance lookups
 - Complete audit trail and transaction history
@@ -43,7 +43,7 @@ ASSETS_FILE=assets.yaml            # Asset configuration file
 - The system fetches up to 500 transactions per wallet per polling cycle
 - With the default 30-second polling interval, this provides adequate processing time per transaction
 - The 6-hour lookback window ensures no transactions are missed between polling cycles
-- If you exceed 500 transactions in 30 seconds, consider reducing the transaction limit
+- If you exceed 500 transactions in 30 seconds, consider adjusting the polling interval
 
 ### 2. Asset Configuration
 
@@ -81,8 +81,7 @@ go run cmd/setup/main.go
 
 This will:
 - Initialize the database and run migrations (including user creation)
-- Create Prime wallets for each asset
-- Generate unique deposit addresses per user/asset
+- Generate unique trading balance deposit addresses per user/asset
 - Store addresses in the database
 
 ## Running the System
@@ -95,17 +94,16 @@ go run cmd/listener/main.go
 ```
 
 This service:
-- Monitors all configured wallets for new transactions
+- Monitors all configured trading balances for new transactions
 - Processes deposits automatically when they reach "TRANSACTION_IMPORTED" status
 - Processes withdrawals when they reach "TRANSACTION_DONE" status
 - Updates user balances
 - Handles out-of-order transactions with lookback window
-- Prevents duplicate processing
 
 ## How the Ledger Works
 
 ### Balance Management
-- **Current Balances**: Stored in `account_balances` table for O(1) lookups
+- **Current Balances**: Stored in `account_balances` table
 - **Transaction History**: Complete audit trail in `transactions` table
 - **Atomic Updates**: Balance and transaction record updated together
 - **Optimistic Locking**: Prevents race conditions with version control
@@ -126,7 +124,7 @@ addresses: user_id, asset, address, wallet_id
 ## Withdrawal Tracking
 
 ### Idempotency Key Format
-When creating withdrawals via Prime API, use this UUID idempotency key format:
+The Coinbase Prime Create Withdrawal API requires a valid UUID when creating a withdrawal. In order to accurately ledger withdrawals within this app, use the following concatenated UUID idempotency key format:
 ```
 {user_id_first_segment}-{uuid_fragment_without_first_segment}
 ```
@@ -138,9 +136,9 @@ When creating withdrawals via Prime API, use this UUID idempotency key format:
 
 **Example:**
 ```bash
-# If user ID is: abc123-def4-567g-890h-ijklmnop1234
+# If user ID is: abcd1234-def4-567g-890h-ijklmnop1234
 # Generate random UUID: 550e8400-e29b-41d4-a716-446655440000
-# Use idempotency key: abc123-e29b-41d4-a716-446655440000
+# Use idempotency key: abcd1234-e29b-41d4-a716-446655440000
 ```
 
 **Implementation:**
@@ -153,16 +151,12 @@ RANDOM_UUID=$(uuidgen | tr '[:upper:]' '[:lower:]')
 WITHDRAWAL_UUID="${USER_PREFIX}-$(echo "$RANDOM_UUID" | cut -d'-' -f2-)"
 ```
 
-**Why This Works:**
-The system matches withdrawals to users by comparing the first segment of the user ID with the first segment of the idempotency key. This maintains UUID format requirements while enabling user identification. This is preferred over relying on withdrawal triggers, as withdrawals can be rejected or fail.
-
 ### Withdrawal Processing Flow
 1. **Create Withdrawal**: Submit to Prime API with proper idempotency key
 2. **Transaction Appears**: Listener detects new withdrawal transaction
 3. **Status Check**: Waits for "TRANSACTION_DONE" status
 4. **User Matching**: Matches via idempotency key prefix
 5. **Balance Update**: Debits user balance atomically
-6. **Confirmation**: Logs successful processing
 
 ## Monitoring & Debugging
 

@@ -18,7 +18,7 @@ func (s *SubledgerService) ProcessTransaction(ctx context.Context, userId, asset
 
 	s.logger.Info("Processing transaction",
 		zap.String("user_id", userId),
-		zap.String("asset", asset),
+		zap.String("asset_network", asset),
 		zap.String("type", transactionType),
 		zap.String("amount", amount.String()),
 		zap.String("external_tx_id", externalTxId))
@@ -128,7 +128,7 @@ func (s *SubledgerService) ProcessTransaction(ctx context.Context, userId, asset
 	s.logger.Info("Transaction processed successfully",
 		zap.String("transaction_id", transactionId),
 		zap.String("user_id", userId),
-		zap.String("asset", asset),
+		zap.String("asset_network", asset),
 		zap.String("old_balance", currentBalance.String()),
 		zap.String("new_balance", newBalance.String()))
 
@@ -199,7 +199,7 @@ func (s *SubledgerService) addJournalEntries(ctx context.Context, tx *sql.Tx, tr
 func (s *SubledgerService) GetTransactionHistory(ctx context.Context, userId, asset string, limit, offset int) ([]models.Transaction, error) {
 	s.logger.Debug("Getting transaction history",
 		zap.String("user_id", userId),
-		zap.String("asset", asset),
+		zap.String("asset_network", asset),
 		zap.Int("limit", limit),
 		zap.Int("offset", offset))
 

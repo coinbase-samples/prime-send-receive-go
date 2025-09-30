@@ -59,7 +59,7 @@ func LoadAssetSymbols(assetsFile string) ([]string, error) {
 
 	symbols := make([]string, len(assets))
 	for i, asset := range assets {
-		symbols[i] = asset.Symbol
+		symbols[i] = fmt.Sprintf("%s-%s", asset.Symbol, asset.Network)
 	}
 
 	return symbols, nil

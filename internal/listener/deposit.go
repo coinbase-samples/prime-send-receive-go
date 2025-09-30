@@ -62,12 +62,12 @@ func (d *SendReceiveListener) processDeposit(ctx context.Context, tx models.Prim
 		zap.String("lookup_address", lookupAddress),
 		zap.String("deposit_address", tx.TransferTo.Address),
 		zap.String("account_identifier", tx.TransferTo.AccountIdentifier),
-		zap.String("asset", wallet.Asset),
+		zap.String("asset_network", wallet.AssetNetwork),
 		zap.String("amount", amount.String()),
 		zap.Time("created_at", tx.CreatedAt),
 		zap.Time("completed_at", tx.CompletedAt))
 
-	result, err := d.apiService.ProcessDeposit(ctx, lookupAddress, wallet.Asset, amount, tx.Id)
+	result, err := d.apiService.ProcessDeposit(ctx, lookupAddress, wallet.AssetNetwork, amount, tx.Id)
 	if err != nil {
 		if strings.Contains(err.Error(), "duplicate transaction") {
 			d.logger.Info("Duplicate transaction detected - already processed, marking as handled",
@@ -79,7 +79,7 @@ func (d *SendReceiveListener) processDeposit(ctx context.Context, tx models.Prim
 			d.logger.Warn("Deposit to unrecognized address - marking as processed to avoid repeated errors",
 				zap.String("transaction_id", tx.Id),
 				zap.String("address", lookupAddress),
-				zap.String("asset", wallet.Asset),
+				zap.String("asset_network", wallet.AssetNetwork),
 				zap.String("amount", amount.String()))
 			d.markTransactionProcessed(tx.Id)
 			return nil

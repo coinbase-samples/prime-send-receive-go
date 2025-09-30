@@ -4,9 +4,9 @@ import "time"
 
 // WalletInfo represents a trading wallet we monitor for deposits
 type WalletInfo struct {
-	Id      string `json:"id"`
-	Asset   string `json:"asset"`
-	Network string `json:"network"`
+	Id           string `json:"id"`
+	AssetNetwork string `json:"asset_network"`
+	Network      string `json:"network"`
 }
 
 // PrimeTransferInfo represents the actual transfer_to structure from Prime API

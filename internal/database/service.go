@@ -181,7 +181,7 @@ func (s *Service) ProcessDeposit(ctx context.Context, address, asset string, amo
 	s.logger.Info("Deposit processed successfully",
 		zap.String("user_id", user.Id),
 		zap.String("user_name", user.Name),
-		zap.String("asset", asset),
+		zap.String("asset_network", asset),
 		zap.String("amount", amount.String()))
 
 	return nil
@@ -203,7 +203,7 @@ func (s *Service) ProcessWithdrawal(ctx context.Context, userId, asset string, a
 
 	s.logger.Info("Processing withdrawal information",
 		zap.String("user_id", userId),
-		zap.String("asset", asset),
+		zap.String("asset_network", asset),
 		zap.String("current_balance", currentBalance.String()),
 		zap.String("withdrawal_amount", amount.String()))
 
@@ -215,7 +215,7 @@ func (s *Service) ProcessWithdrawal(ctx context.Context, userId, asset string, a
 	s.logger.Info("Withdrawal processed successfully",
 		zap.String("user_id", user.Id),
 		zap.String("user_name", user.Name),
-		zap.String("asset", asset),
+		zap.String("asset_network", asset),
 		zap.String("amount", amount.String()))
 
 	return nil

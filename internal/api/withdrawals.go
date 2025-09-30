@@ -20,7 +20,7 @@ func (s *LedgerService) ProcessWithdrawal(ctx context.Context, userId, asset str
 
 	s.logger.Info("Processing real withdrawal from Prime API",
 		zap.String("user_id", userId),
-		zap.String("asset", asset),
+		zap.String("asset_network", asset),
 		zap.String("amount", amount.String()),
 		zap.String("external_tx_id", externalTxId))
 
@@ -29,13 +29,13 @@ func (s *LedgerService) ProcessWithdrawal(ctx context.Context, userId, asset str
 		if strings.Contains(err.Error(), "duplicate transaction") {
 			s.logger.Info("Duplicate withdrawal detected in API service",
 				zap.String("user_id", userId),
-				zap.String("asset", asset),
+				zap.String("asset_network", asset),
 				zap.String("amount", amount.String()),
 				zap.String("external_tx_id", externalTxId))
 		} else {
 			s.logger.Error("Withdrawal processing failed",
 				zap.String("user_id", userId),
-				zap.String("asset", asset),
+				zap.String("asset_network", asset),
 				zap.String("amount", amount.String()),
 				zap.Error(err))
 		}
@@ -78,7 +78,7 @@ func (s *LedgerService) ProcessWithdrawal(ctx context.Context, userId, asset str
 	if err != nil {
 		s.logger.Error("Balance lookup failed after withdrawal processing",
 			zap.String("user_id", userId),
-			zap.String("asset", asset),
+			zap.String("asset_network", asset),
 			zap.Error(err))
 		return &DepositResult{
 			Success: false,
@@ -89,7 +89,7 @@ func (s *LedgerService) ProcessWithdrawal(ctx context.Context, userId, asset str
 	s.logger.Info("Real withdrawal processed successfully",
 		zap.String("user_id", user.Id),
 		zap.String("user_name", user.Name),
-		zap.String("asset", asset),
+		zap.String("asset_network", asset),
 		zap.String("amount", amount.String()),
 		zap.String("new_balance", newBalance.String()))
 
