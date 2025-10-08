@@ -30,7 +30,7 @@ const (
 	queryGetUserAddresses = `
 		SELECT id, user_id, asset, network, address, wallet_id, account_identifier, created_at
 		FROM addresses
-		WHERE user_id = ? AND asset = ?
+		WHERE user_id = ? AND asset = ? AND network = ?
 		ORDER BY created_at DESC`
 
 	queryGetAllUserAddresses = `

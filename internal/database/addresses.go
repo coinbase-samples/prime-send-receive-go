@@ -37,16 +37,18 @@ func (s *Service) StoreAddress(ctx context.Context, userId string, asset, networ
 	return addr, nil
 }
 
-func (s *Service) GetAddresses(ctx context.Context, userId string, asset string) ([]models.Address, error) {
+func (s *Service) GetAddresses(ctx context.Context, userId string, asset string, network string) ([]models.Address, error) {
 	s.logger.Debug("Querying addresses",
 		zap.String("user_id", userId),
-		zap.String("asset", asset))
+		zap.String("asset", asset),
+		zap.String("network", network))
 
-	rows, err := s.db.QueryContext(ctx, queryGetUserAddresses, userId, asset)
+	rows, err := s.db.QueryContext(ctx, queryGetUserAddresses, userId, asset, network)
 	if err != nil {
 		s.logger.Error("Failed to query addresses",
 			zap.String("user_id", userId),
 			zap.String("asset", asset),
+			zap.String("network", network),
 			zap.Error(err))
 		return nil, fmt.Errorf("unable to query addresses: %v", err)
 	}
@@ -76,6 +78,7 @@ func (s *Service) GetAddresses(ctx context.Context, userId string, asset string)
 	s.logger.Debug("Retrieved addresses",
 		zap.String("user_id", userId),
 		zap.String("asset", asset),
+		zap.String("network", network),
 		zap.Int("count", len(addresses)))
 	return addresses, nil
 }

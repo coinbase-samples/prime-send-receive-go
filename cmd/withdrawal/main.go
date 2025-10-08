@@ -123,19 +123,32 @@ func main() {
 	fmt.Println()
 
 	// Step 4: Get wallet ID from address database
-	logger.Info("Looking up wallet ID for asset", zap.String("asset", *assetFlag))
-	addresses, err := services.DbService.GetAddresses(ctx, targetUser.Id, *assetFlag)
+	// Parse asset flag (format: SYMBOL-network-type, e.g., ETH-ethereum-mainnet)
+	assetParts := strings.SplitN(*assetFlag, "-", 2)
+	if len(assetParts) != 2 {
+		logger.Fatal("Invalid asset format. Expected format: SYMBOL-network-type (e.g., ETH-ethereum-mainnet)",
+			zap.String("asset", *assetFlag))
+	}
+	symbol := assetParts[0]
+	network := assetParts[1]
+
+	logger.Info("Looking up wallet ID for asset",
+		zap.String("asset", symbol),
+		zap.String("network", network))
+	addresses, err := services.DbService.GetAddresses(ctx, targetUser.Id, symbol, network)
 	if err != nil {
 		logger.Fatal("Failed to get wallet for asset",
 			zap.String("user_id", targetUser.Id),
-			zap.String("asset", *assetFlag),
+			zap.String("asset", symbol),
+			zap.String("network", network),
 			zap.Error(err))
 	}
 
 	if len(addresses) == 0 {
 		logger.Fatal("No wallet found for asset",
 			zap.String("user_id", targetUser.Id),
-			zap.String("asset", *assetFlag))
+			zap.String("asset", symbol),
+			zap.String("network", network))
 	}
 
 	walletId := addresses[0].WalletId

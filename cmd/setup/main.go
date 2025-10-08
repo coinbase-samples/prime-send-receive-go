@@ -13,51 +13,13 @@ import (
 	"go.uber.org/zap"
 )
 
-func runInit(ctx context.Context, logger *zap.Logger) {
-	logger.Info("Initializing database and generating addresses")
-
-	logger.Info("Setting up SQLite database")
-
-	logger.Info("Generating addresses")
-	generateAddresses(ctx, logger)
-
-	logger.Info("Initialization complete")
-}
-
-func main() {
-	ctx := context.Background()
-
-	logger, loggerCleanup := common.InitializeLogger()
-	defer loggerCleanup()
-
-	initFlag := flag.Bool("init", false, "Initialize the database")
-	flag.Parse()
-
-	if *initFlag {
-		runInit(ctx, logger)
-		return
-	}
-
-	generateAddresses(ctx, logger)
-}
-
-func generateAddresses(ctx context.Context, logger *zap.Logger) {
+func generateAddresses(ctx context.Context, logger *zap.Logger, services *common.Services) {
 	logger.Info("Loading asset configuration")
 	assetConfigs, err := common.LoadAssetConfig("assets.yaml")
 	if err != nil {
 		logger.Fatal("Failed to load asset config", zap.Error(err))
 	}
 	logger.Info("Asset configuration loaded", zap.Int("count", len(assetConfigs)))
-
-	cfg, err := config.Load()
-	if err != nil {
-		logger.Fatal("Failed to load config", zap.Error(err))
-	}
-	services, err := common.InitializeServices(ctx, logger, cfg)
-	if err != nil {
-		logger.Fatal("Failed to initialize services", zap.Error(err))
-	}
-	defer services.Close()
 
 	users, err := services.DbService.GetUsers(ctx)
 	if err != nil {
@@ -74,16 +36,12 @@ func generateAddresses(ctx context.Context, logger *zap.Logger) {
 			zap.String("email", user.Email))
 
 		for _, assetConfig := range assetConfigs {
-			// Use composite asset-network format consistently
-			compositeAsset := fmt.Sprintf("%s-%s", assetConfig.Symbol, assetConfig.Network)
-
 			logger.Info("Processing asset",
 				zap.String("user_id", user.Id),
 				zap.String("asset", assetConfig.Symbol),
-				zap.String("network", assetConfig.Network),
-				zap.String("composite_asset", compositeAsset))
+				zap.String("network", assetConfig.Network))
 
-			existingAddresses, err := services.DbService.GetAddresses(ctx, user.Id, compositeAsset)
+			existingAddresses, err := services.DbService.GetAddresses(ctx, user.Id, assetConfig.Symbol, assetConfig.Network)
 			if err != nil {
 				logger.Error("Error checking existing addresses",
 					zap.String("user_id", user.Id),
@@ -155,8 +113,8 @@ func generateAddresses(ctx context.Context, logger *zap.Logger) {
 				zap.String("network", assetConfig.Network),
 				zap.String("address", depositAddress.Address))
 
-			// Store with composite asset-network format (compositeAsset defined above)
-			storedAddress, err := services.DbService.StoreAddress(ctx, user.Id, compositeAsset, assetConfig.Network, depositAddress.Address, targetWallet.Id, depositAddress.Id)
+			// Store with separate asset and network columns
+			storedAddress, err := services.DbService.StoreAddress(ctx, user.Id, assetConfig.Symbol, assetConfig.Network, depositAddress.Address, targetWallet.Id, depositAddress.Id)
 			if err != nil {
 				logger.Error("Error storing address to database",
 					zap.String("asset", assetConfig.Symbol),
@@ -191,4 +149,44 @@ func generateAddresses(ctx context.Context, logger *zap.Logger) {
 		logger.Info("Address generation completed successfully",
 			zap.Int("total_addresses_created", totalAddresses))
 	}
+}
+
+func runInit(ctx context.Context, logger *zap.Logger, services *common.Services) {
+	logger.Info("Initializing database and generating addresses")
+
+	logger.Info("Setting up SQLite database")
+
+	logger.Info("Generating addresses")
+	generateAddresses(ctx, logger, services)
+
+	logger.Info("Initialization complete")
+}
+
+func main() {
+	ctx := context.Background()
+
+	logger, loggerCleanup := common.InitializeLogger()
+	defer loggerCleanup()
+
+	initFlag := flag.Bool("init", false, "Initialize the database")
+	flag.Parse()
+
+	// Initialize services at top level
+	cfg, err := config.Load()
+	if err != nil {
+		logger.Fatal("Failed to load config", zap.Error(err))
+	}
+
+	services, err := common.InitializeServices(ctx, logger, cfg)
+	if err != nil {
+		logger.Fatal("Failed to initialize services", zap.Error(err))
+	}
+	defer services.Close()
+
+	if *initFlag {
+		runInit(ctx, logger, services)
+		return
+	}
+
+	generateAddresses(ctx, logger, services)
 }

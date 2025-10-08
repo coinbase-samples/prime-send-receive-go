@@ -89,13 +89,14 @@ func (d *SendReceiveListener) LoadMonitoredWallets(ctx context.Context, assetsFi
 
 	for _, user := range users {
 		for _, assetConfig := range assetConfigs {
-			// Use composite asset name (symbol-network) for database lookup to match storage format
+			// Use composite asset name (symbol-network) for wallet identification
 			compositeAsset := fmt.Sprintf("%s-%s", assetConfig.Symbol, assetConfig.Network)
-			addresses, err := d.dbService.GetAddresses(ctx, user.Id, compositeAsset)
+			addresses, err := d.dbService.GetAddresses(ctx, user.Id, assetConfig.Symbol, assetConfig.Network)
 			if err != nil {
 				d.logger.Error("Failed to get addresses for user/asset",
 					zap.String("user_id", user.Id),
-					zap.String("asset", compositeAsset),
+					zap.String("asset", assetConfig.Symbol),
+					zap.String("network", assetConfig.Network),
 					zap.Error(err))
 				continue
 			}
