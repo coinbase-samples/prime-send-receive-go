@@ -10,6 +10,7 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/shopspring/decimal"
 	"go.uber.org/zap"
+	"prime-send-receive-go/internal/config"
 	"prime-send-receive-go/internal/database/models"
 )
 
@@ -19,21 +20,21 @@ type Service struct {
 	subledger *SubledgerService
 }
 
-func NewService(ctx context.Context, logger *zap.Logger, dbPath string) (*Service, error) {
-	logger.Info("Opening SQLite database", zap.String("file", dbPath))
-	db, err := sql.Open("sqlite3", dbPath+"?_journal_mode=WAL&_synchronous=NORMAL&_cache_size=1000")
+func NewService(ctx context.Context, logger *zap.Logger, cfg config.DatabaseConfig) (*Service, error) {
+	logger.Info("Opening SQLite database", zap.String("file", cfg.Path))
+	db, err := sql.Open("sqlite3", cfg.Path+"?_journal_mode=WAL&_synchronous=NORMAL&_cache_size=1000")
 	if err != nil {
 		return nil, fmt.Errorf("unable to open database: %v", err)
 	}
 
 	// Set connection timeouts and limits
-	db.SetMaxOpenConns(25)
-	db.SetMaxIdleConns(5)
-	db.SetConnMaxLifetime(5 * time.Minute)
-	db.SetConnMaxIdleTime(30 * time.Second)
+	db.SetMaxOpenConns(cfg.MaxOpenConns)
+	db.SetMaxIdleConns(cfg.MaxIdleConns)
+	db.SetConnMaxLifetime(cfg.ConnMaxLifetime)
+	db.SetConnMaxIdleTime(cfg.ConnMaxIdleTime)
 
 	// Test connection with timeout
-	pingCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	pingCtx, cancel := context.WithTimeout(ctx, cfg.PingTimeout)
 	defer cancel()
 	if err := db.PingContext(pingCtx); err != nil {
 		err := db.Close()

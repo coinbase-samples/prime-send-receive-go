@@ -30,7 +30,7 @@ func main() {
 
 	logger.Info("Starting Prime Send/Receive Listener")
 
-	services, err := common.InitializeServices(ctx, logger, cfg.Database.Path)
+	services, err := common.InitializeServices(ctx, logger, cfg)
 	if err != nil {
 		logger.Fatal("Failed to initialize services", zap.Error(err))
 	}

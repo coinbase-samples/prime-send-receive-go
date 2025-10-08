@@ -5,9 +5,9 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"os"
 
 	"prime-send-receive-go/internal/common"
+	"prime-send-receive-go/internal/config"
 	"prime-send-receive-go/internal/prime/models"
 
 	"go.uber.org/zap"
@@ -49,11 +49,11 @@ func generateAddresses(ctx context.Context, logger *zap.Logger) {
 	}
 	logger.Info("Asset configuration loaded", zap.Int("count", len(assetConfigs)))
 
-	dbPath := os.Getenv("DATABASE_PATH")
-	if dbPath == "" {
-		dbPath = "addresses.db"
+	cfg, err := config.Load()
+	if err != nil {
+		logger.Fatal("Failed to load config", zap.Error(err))
 	}
-	services, err := common.InitializeServices(ctx, logger, dbPath)
+	services, err := common.InitializeServices(ctx, logger, cfg)
 	if err != nil {
 		logger.Fatal("Failed to initialize services", zap.Error(err))
 	}

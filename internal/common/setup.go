@@ -5,6 +5,7 @@ import (
 	"log"
 	"strings"
 
+	"prime-send-receive-go/internal/config"
 	"prime-send-receive-go/internal/database"
 	"prime-send-receive-go/internal/prime"
 	"prime-send-receive-go/internal/prime/models"
@@ -37,8 +38,8 @@ func InitializeLogger() (*zap.Logger, func()) {
 	return logger, cleanup
 }
 
-func InitializeServices(ctx context.Context, logger *zap.Logger, dbPath string) (*Services, error) {
-	dbService, err := database.NewService(ctx, logger, dbPath)
+func InitializeServices(ctx context.Context, logger *zap.Logger, cfg *config.Config) (*Services, error) {
+	dbService, err := database.NewService(ctx, logger, cfg.Database)
 	if err != nil {
 		return nil, err
 	}

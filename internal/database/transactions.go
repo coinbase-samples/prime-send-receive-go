@@ -76,29 +76,33 @@ func (s *SubledgerService) ProcessTransaction(ctx context.Context, userId, asset
 
 	// Create transaction record
 	transactionId := uuid.New().String()
-	transaction := &models.Transaction{
-		Id:                    transactionId,
-		UserId:                userId,
-		Asset:                 asset,
-		TransactionType:       transactionType,
-		Amount:                amount,
-		BalanceBefore:         currentBalance,
-		BalanceAfter:          newBalance,
-		ExternalTransactionId: externalTxId,
-		Address:               address,
-		Reference:             reference,
-		Status:                "confirmed",
-		CreatedAt:             time.Now(),
-		ProcessedAt:           time.Now(),
-	}
+	now := time.Now()
+	transaction := &models.Transaction{}
 
-	_, err = tx.ExecContext(ctx, queryInsertTransaction,
-		transaction.Id, transaction.UserId, transaction.Asset, transaction.TransactionType,
-		transaction.Amount.String(), transaction.BalanceBefore.String(), transaction.BalanceAfter.String(),
-		transaction.ExternalTransactionId, transaction.Address, transaction.Reference,
-		transaction.Status, transaction.CreatedAt, transaction.ProcessedAt)
+	var amountStr, balanceBeforeStr, balanceAfterStr string
+	err = tx.QueryRowContext(ctx, queryInsertTransaction,
+		transactionId, userId, asset, transactionType,
+		amount.String(), currentBalance.String(), newBalance.String(),
+		externalTxId, address, reference, "confirmed", now, now).
+		Scan(&transaction.Id, &transaction.UserId, &transaction.Asset, &transaction.TransactionType,
+			&amountStr, &balanceBeforeStr, &balanceAfterStr,
+			&transaction.ExternalTransactionId, &transaction.Address, &transaction.Reference,
+			&transaction.Status, &transaction.CreatedAt, &transaction.ProcessedAt)
 	if err != nil {
 		return nil, fmt.Errorf("failed to insert transaction: %v", err)
+	}
+
+	transaction.Amount, err = decimal.NewFromString(amountStr)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse returned amount: %v", err)
+	}
+	transaction.BalanceBefore, err = decimal.NewFromString(balanceBeforeStr)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse returned balance_before: %v", err)
+	}
+	transaction.BalanceAfter, err = decimal.NewFromString(balanceAfterStr)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse returned balance_after: %v", err)
 	}
 
 	// Update account balance (with optimistic locking)

@@ -13,7 +13,12 @@ type Config struct {
 }
 
 type DatabaseConfig struct {
-	Path string
+	Path            string
+	MaxOpenConns    int
+	MaxIdleConns    int
+	ConnMaxLifetime time.Duration
+	ConnMaxIdleTime time.Duration
+	PingTimeout     time.Duration
 }
 
 type ListenerConfig struct {
@@ -39,9 +44,29 @@ func Load() (*Config, error) {
 		return nil, err
 	}
 
+	connMaxLifetime, err := getEnvDuration("DB_CONN_MAX_LIFETIME", 5*time.Minute)
+	if err != nil {
+		return nil, err
+	}
+
+	connMaxIdleTime, err := getEnvDuration("DB_CONN_MAX_IDLE_TIME", 30*time.Second)
+	if err != nil {
+		return nil, err
+	}
+
+	pingTimeout, err := getEnvDuration("DB_PING_TIMEOUT", 5*time.Second)
+	if err != nil {
+		return nil, err
+	}
+
 	return &Config{
 		Database: DatabaseConfig{
-			Path: getEnvString("DATABASE_PATH", "addresses.db"),
+			Path:            getEnvString("DATABASE_PATH", "addresses.db"),
+			MaxOpenConns:    getEnvInt("DB_MAX_OPEN_CONNS", 25),
+			MaxIdleConns:    getEnvInt("DB_MAX_IDLE_CONNS", 5),
+			ConnMaxLifetime: connMaxLifetime,
+			ConnMaxIdleTime: connMaxIdleTime,
+			PingTimeout:     pingTimeout,
 		},
 		Listener: ListenerConfig{
 			LookbackWindow:  lookbackWindow,

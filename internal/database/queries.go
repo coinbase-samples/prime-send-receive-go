@@ -19,7 +19,8 @@ const (
 	// Address queries
 	queryInsertAddress = `
 		INSERT INTO addresses (id, user_id, asset, network, address, wallet_id, account_identifier)
-		VALUES (?, ?, ?, ?, ?, ?, ?)`
+		VALUES (?, ?, ?, ?, ?, ?, ?)
+		RETURNING *`
 
 	queryGetUserAddresses = `
 		SELECT id, user_id, asset, network, address, wallet_id, account_identifier, created_at
@@ -68,7 +69,9 @@ const (
 		INSERT INTO transactions (
 			id, user_id, asset, transaction_type, amount, balance_before, balance_after,
 			external_transaction_id, address, reference, status, created_at, processed_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		RETURNING id, user_id, asset, transaction_type, amount, balance_before, balance_after,
+		          external_transaction_id, address, reference, status, created_at, processed_at`
 
 	queryUpdateAccountBalance = `
 		UPDATE account_balances 

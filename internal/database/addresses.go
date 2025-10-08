@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"time"
 
 	"github.com/google/uuid"
 	"go.uber.org/zap"
@@ -21,25 +20,16 @@ func (s *Service) StoreAddress(ctx context.Context, userId string, asset, networ
 	// Generate UUID for the address
 	addressId := uuid.New().String()
 
-	_, err := s.db.ExecContext(ctx, queryInsertAddress, addressId, userId, asset, network, address, walletId, accountIdentifier)
+	addr := &models.Address{}
+	err := s.db.QueryRowContext(ctx, queryInsertAddress, addressId, userId, asset, network, address, walletId, accountIdentifier).Scan(
+		&addr.Id, &addr.UserId, &addr.Asset, &addr.Network, &addr.Address, &addr.WalletId, &addr.AccountIdentifier, &addr.CreatedAt,
+	)
 	if err != nil {
 		s.logger.Error("Failed to insert address",
 			zap.String("user_id", userId),
 			zap.String("asset", asset),
 			zap.Error(err))
 		return nil, fmt.Errorf("unable to insert address: %v", err)
-	}
-
-	// Get the created address
-	addr := &models.Address{
-		Id:                addressId,
-		UserId:            userId,
-		Asset:             asset,
-		Network:           network,
-		Address:           address,
-		WalletId:          walletId,
-		AccountIdentifier: accountIdentifier,
-		CreatedAt:         time.Now(),
 	}
 
 	s.logger.Info("Address stored successfully", zap.String("id", addressId))
