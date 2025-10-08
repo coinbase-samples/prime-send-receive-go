@@ -6,12 +6,12 @@ import (
 	"fmt"
 	"time"
 
+	"prime-send-receive-go/internal/models"
+
 	"github.com/google/uuid"
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/shopspring/decimal"
 	"go.uber.org/zap"
-	"prime-send-receive-go/internal/config"
-	"prime-send-receive-go/internal/database/models"
 )
 
 type Service struct {
@@ -20,7 +20,7 @@ type Service struct {
 	subledger *SubledgerService
 }
 
-func NewService(ctx context.Context, logger *zap.Logger, cfg config.DatabaseConfig) (*Service, error) {
+func NewService(ctx context.Context, logger *zap.Logger, cfg models.DatabaseConfig) (*Service, error) {
 	logger.Info("Opening SQLite database", zap.String("file", cfg.Path))
 	db, err := sql.Open("sqlite3", cfg.Path+"?_journal_mode=WAL&_synchronous=NORMAL&_cache_size=1000")
 	if err != nil {

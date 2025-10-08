@@ -10,7 +10,7 @@ import (
 	"prime-send-receive-go/internal/api"
 	"prime-send-receive-go/internal/common"
 	"prime-send-receive-go/internal/database"
-	"prime-send-receive-go/internal/listener/models"
+	"prime-send-receive-go/internal/models"
 	"prime-send-receive-go/internal/prime"
 
 	"go.uber.org/zap"
@@ -89,20 +89,19 @@ func (d *SendReceiveListener) LoadMonitoredWallets(ctx context.Context, assetsFi
 
 	for _, user := range users {
 		for _, assetConfig := range assetConfigs {
-			// Use original symbol for database lookup
-			addresses, err := d.dbService.GetAddresses(ctx, user.Id, assetConfig.Symbol)
+			// Use composite asset name (symbol-network) for database lookup to match storage format
+			compositeAsset := fmt.Sprintf("%s-%s", assetConfig.Symbol, assetConfig.Network)
+			addresses, err := d.dbService.GetAddresses(ctx, user.Id, compositeAsset)
 			if err != nil {
 				d.logger.Error("Failed to get addresses for user/asset",
 					zap.String("user_id", user.Id),
-					zap.String("asset", assetConfig.Symbol),
+					zap.String("asset", compositeAsset),
 					zap.Error(err))
 				continue
 			}
 
 			for _, addr := range addresses {
 				if addr.WalletId != "" {
-					// Use composite asset name for ledger operations
-					compositeAsset := fmt.Sprintf("%s-%s", assetConfig.Symbol, assetConfig.Network)
 					walletMap[addr.WalletId] = models.WalletInfo{
 						Id:           addr.WalletId,
 						AssetNetwork: compositeAsset,

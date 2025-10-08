@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"go.uber.org/zap"
-	"prime-send-receive-go/internal/listener/models"
+	"prime-send-receive-go/internal/models"
 )
 
 // Start begins the deposit monitoring process

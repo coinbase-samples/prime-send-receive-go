@@ -7,7 +7,7 @@ import (
 
 	"github.com/shopspring/decimal"
 	"go.uber.org/zap"
-	"prime-send-receive-go/internal/database/models"
+	"prime-send-receive-go/internal/models"
 )
 
 // GetBalance returns current balance for user/asset (O(1) lookup)

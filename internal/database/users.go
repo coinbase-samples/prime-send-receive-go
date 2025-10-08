@@ -6,8 +6,9 @@ import (
 	"errors"
 	"fmt"
 
+	"prime-send-receive-go/internal/models"
+
 	"go.uber.org/zap"
-	"prime-send-receive-go/internal/database/models"
 )
 
 func (s *Service) GetUsers(ctx context.Context) ([]models.User, error) {
@@ -61,5 +62,23 @@ func (s *Service) GetUserById(ctx context.Context, userId string) (*models.User,
 	}
 
 	s.logger.Debug("Retrieved user by ID", zap.String("user_id", userId), zap.String("name", user.Name))
+	return &user, nil
+}
+
+func (s *Service) GetUserByEmail(ctx context.Context, email string) (*models.User, error) {
+	s.logger.Debug("Querying user by email", zap.String("email", email))
+
+	var user models.User
+	err := s.db.QueryRowContext(ctx, queryGetUserByEmail, email).Scan(
+		&user.Id, &user.Name, &user.Email, &user.CreatedAt, &user.UpdatedAt)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, fmt.Errorf("user not found: %s", email)
+		}
+		s.logger.Error("Failed to query user by email", zap.String("email", email), zap.Error(err))
+		return nil, fmt.Errorf("unable to query user by email: %v", err)
+	}
+
+	s.logger.Debug("Retrieved user by email", zap.String("email", email), zap.String("name", user.Name))
 	return &user, nil
 }

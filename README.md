@@ -90,6 +90,19 @@ This will:
 
 ## Running the System
 
+### Quick Command Reference
+
+```bash
+# Setup
+go run cmd/setup/main.go                    # Generate deposit addresses
+
+# Operations
+go run cmd/listener/main.go                 # Start transaction listener
+go run cmd/addresses/main.go                # View deposit addresses
+go run cmd/balances/main.go                 # View user balances
+go run cmd/withdrawal/main.go [flags]       # Create withdrawal
+```
+
 ### Deposit & Withdrawal Listener
 
 Start the transaction listener:
@@ -103,6 +116,70 @@ This service:
 - Processes withdrawals when they reach "TRANSACTION_DONE" status
 - Updates user balances
 - Handles out-of-order transactions with lookback window
+
+### CLI Commands
+
+The system provides several CLI commands for managing and querying user balances and addresses.
+
+#### View User Addresses
+
+Display all deposit addresses for users:
+```bash
+# Show addresses for all users
+go run cmd/addresses/main.go
+
+# Show addresses for a specific user
+go run cmd/addresses/main.go --email alice.johnson@example.com
+```
+
+Output includes:
+- User name and email
+- Asset-network format (e.g., `ETH-ethereum-mainnet`)
+- Deposit address
+- Account identifier (if different from address)
+
+#### Check User Balances
+
+Query current balances for all users:
+```bash
+# Show balances for all users
+go run cmd/balances/main.go
+
+# Show balances for a specific user
+go run cmd/balances/main.go --email alice.johnson@example.com
+```
+
+Output includes:
+- Current balance per asset
+- Version number (for optimistic locking)
+- Last transaction ID
+- Last updated timestamp
+
+#### Create Withdrawal
+
+Initiate a withdrawal for a user:
+```bash
+go run cmd/withdrawal/main.go \
+  --email alice.johnson@example.com \
+  --asset ETH-ethereum-mainnet \
+  --amount 0.1 \
+  --destination 0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb
+```
+
+The withdrawal process:
+1. **Validates user** by email
+2. **Checks balance** to ensure sufficient funds
+3. **Looks up wallet ID** from addresses table
+4. **Creates withdrawal** via Prime API with proper idempotency key
+5. **Records transaction** (handled automatically by listener)
+
+**Required Flags:**
+- `--email`: User's email address
+- `--asset`: Asset in format `SYMBOL-network-type` (e.g., `ETH-ethereum-mainnet`)
+- `--amount`: Withdrawal amount (as decimal string)
+- `--destination`: Blockchain address to send funds to
+
+**Note:** The withdrawal command generates the idempotency key automatically using the format specified below, combining the user's ID prefix with a random UUID suffix.
 
 ## How the Ledger Works
 
@@ -165,11 +242,33 @@ WITHDRAWAL_UUID="${USER_PREFIX}-$(echo "$RANDOM_UUID" | cut -d'-' -f2-)"
 ## Monitoring & Debugging
 
 ### Check User Balances
+
+Use the balances CLI command for a formatted view:
+```bash
+go run cmd/balances/main.go
+```
+
+Or query directly via SQL:
 ```sql
 SELECT u.name, ab.asset, ab.balance 
 FROM users u 
 JOIN account_balances ab ON u.id = ab.user_id
 WHERE ab.balance > 0;
+```
+
+### View User Addresses
+
+Use the addresses CLI command:
+```bash
+go run cmd/addresses/main.go --email user@example.com
+```
+
+Or query via SQL:
+```sql
+SELECT u.name, a.asset, a.address, a.wallet_id
+FROM users u
+JOIN addresses a ON u.id = a.user_id
+WHERE u.email = 'user@example.com';
 ```
 
 ### View Recent Transactions

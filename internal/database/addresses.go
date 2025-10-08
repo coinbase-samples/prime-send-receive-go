@@ -5,9 +5,10 @@ import (
 	"database/sql"
 	"fmt"
 
+	"prime-send-receive-go/internal/models"
+
 	"github.com/google/uuid"
 	"go.uber.org/zap"
-	"prime-send-receive-go/internal/database/models"
 )
 
 func (s *Service) StoreAddress(ctx context.Context, userId string, asset, network, address, walletId, accountIdentifier string) (*models.Address, error) {
@@ -75,6 +76,45 @@ func (s *Service) GetAddresses(ctx context.Context, userId string, asset string)
 	s.logger.Debug("Retrieved addresses",
 		zap.String("user_id", userId),
 		zap.String("asset", asset),
+		zap.Int("count", len(addresses)))
+	return addresses, nil
+}
+
+func (s *Service) GetAllUserAddresses(ctx context.Context, userId string) ([]models.Address, error) {
+	s.logger.Debug("Querying all addresses for user", zap.String("user_id", userId))
+
+	rows, err := s.db.QueryContext(ctx, queryGetAllUserAddresses, userId)
+	if err != nil {
+		s.logger.Error("Failed to query all addresses",
+			zap.String("user_id", userId),
+			zap.Error(err))
+		return nil, fmt.Errorf("unable to query all addresses: %v", err)
+	}
+	defer func(rows *sql.Rows) {
+		if err := rows.Close(); err != nil {
+			s.logger.Warn("Failed to close rows", zap.Error(err))
+		}
+	}(rows)
+
+	var addresses []models.Address
+	for rows.Next() {
+		var addr models.Address
+		err := rows.Scan(&addr.Id, &addr.UserId, &addr.Asset, &addr.Network, &addr.Address, &addr.WalletId, &addr.AccountIdentifier, &addr.CreatedAt)
+		if err != nil {
+			s.logger.Error("Failed to scan address row", zap.Error(err))
+			return nil, fmt.Errorf("unable to scan address row: %v", err)
+		}
+		addresses = append(addresses, addr)
+	}
+
+	// Check for errors during iteration
+	if err := rows.Err(); err != nil {
+		s.logger.Error("Error during address row iteration", zap.Error(err))
+		return nil, fmt.Errorf("error iterating address rows: %v", err)
+	}
+
+	s.logger.Debug("Retrieved all addresses",
+		zap.String("user_id", userId),
 		zap.Int("count", len(addresses)))
 	return addresses, nil
 }

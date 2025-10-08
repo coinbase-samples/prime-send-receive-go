@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 
+	"prime-send-receive-go/internal/models"
+
 	"github.com/shopspring/decimal"
 	"go.uber.org/zap"
 )
@@ -27,7 +29,7 @@ func (s *LedgerService) GetUserBalance(ctx context.Context, userId, asset string
 }
 
 // GetUserBalances returns all non-zero balances for a user
-func (s *LedgerService) GetUserBalances(ctx context.Context, userId string) ([]UserBalance, error) {
+func (s *LedgerService) GetUserBalances(ctx context.Context, userId string) ([]models.UserBalance, error) {
 	if userId == "" {
 		return nil, fmt.Errorf("user_id is required")
 	}
@@ -38,9 +40,9 @@ func (s *LedgerService) GetUserBalances(ctx context.Context, userId string) ([]U
 		return nil, fmt.Errorf("failed to retrieve balances")
 	}
 
-	result := make([]UserBalance, len(balances))
+	result := make([]models.UserBalance, len(balances))
 	for i, balance := range balances {
-		result[i] = UserBalance{
+		result[i] = models.UserBalance{
 			Asset:   balance.Asset,
 			Balance: balance.Balance,
 		}
@@ -50,7 +52,7 @@ func (s *LedgerService) GetUserBalances(ctx context.Context, userId string) ([]U
 }
 
 // GetTransactionHistory returns paginated transaction history for a user and asset
-func (s *LedgerService) GetTransactionHistory(ctx context.Context, userId, asset string, limit, offset int) ([]TransactionRecord, error) {
+func (s *LedgerService) GetTransactionHistory(ctx context.Context, userId, asset string, limit, offset int) ([]models.TransactionRecord, error) {
 	if userId == "" || asset == "" {
 		return nil, fmt.Errorf("user_id and asset are required")
 	}
@@ -71,9 +73,9 @@ func (s *LedgerService) GetTransactionHistory(ctx context.Context, userId, asset
 		return nil, fmt.Errorf("failed to retrieve transaction history")
 	}
 
-	result := make([]TransactionRecord, len(transactions))
+	result := make([]models.TransactionRecord, len(transactions))
 	for i, tx := range transactions {
-		result[i] = TransactionRecord{
+		result[i] = models.TransactionRecord{
 			Id:          tx.Id,
 			Type:        tx.TransactionType,
 			Asset:       tx.Asset,

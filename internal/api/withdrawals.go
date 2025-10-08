@@ -5,14 +5,14 @@ import (
 	"strings"
 
 	"github.com/shopspring/decimal"
-	"prime-send-receive-go/internal/database/models"
+	"prime-send-receive-go/internal/models"
 
 	"go.uber.org/zap"
 )
 
-func (s *LedgerService) ProcessWithdrawal(ctx context.Context, userId, asset string, amount decimal.Decimal, externalTxId string) (*DepositResult, error) {
+func (s *LedgerService) ProcessWithdrawal(ctx context.Context, userId, asset string, amount decimal.Decimal, externalTxId string) (*models.DepositResult, error) {
 	if userId == "" || asset == "" || amount.LessThanOrEqual(decimal.Zero) || externalTxId == "" {
-		return &DepositResult{
+		return &models.DepositResult{
 			Success: false,
 			Error:   "invalid withdrawal parameters",
 		}, nil
@@ -40,7 +40,7 @@ func (s *LedgerService) ProcessWithdrawal(ctx context.Context, userId, asset str
 				zap.Error(err))
 		}
 
-		return &DepositResult{
+		return &models.DepositResult{
 			Success: false,
 			Error:   err.Error(),
 		}, nil
@@ -51,7 +51,7 @@ func (s *LedgerService) ProcessWithdrawal(ctx context.Context, userId, asset str
 		s.logger.Error("User lookup failed after withdrawal processing",
 			zap.String("user_id", userId),
 			zap.Error(err))
-		return &DepositResult{
+		return &models.DepositResult{
 			Success: false,
 			Error:   "user lookup failed after withdrawal processing",
 		}, nil
@@ -68,7 +68,7 @@ func (s *LedgerService) ProcessWithdrawal(ctx context.Context, userId, asset str
 	if user == nil {
 		s.logger.Error("User not found after withdrawal processing",
 			zap.String("user_id", userId))
-		return &DepositResult{
+		return &models.DepositResult{
 			Success: false,
 			Error:   "user not found after withdrawal processing",
 		}, nil
@@ -80,7 +80,7 @@ func (s *LedgerService) ProcessWithdrawal(ctx context.Context, userId, asset str
 			zap.String("user_id", userId),
 			zap.String("asset_network", asset),
 			zap.Error(err))
-		return &DepositResult{
+		return &models.DepositResult{
 			Success: false,
 			Error:   "balance lookup failed after withdrawal processing",
 		}, nil
@@ -93,7 +93,7 @@ func (s *LedgerService) ProcessWithdrawal(ctx context.Context, userId, asset str
 		zap.String("amount", amount.String()),
 		zap.String("new_balance", newBalance.String()))
 
-	return &DepositResult{
+	return &models.DepositResult{
 		Success:    true,
 		UserId:     user.Id,
 		Asset:      asset,

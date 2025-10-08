@@ -5,7 +5,10 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"strings"
 	"time"
+
+	"prime-send-receive-go/internal/models"
 
 	"github.com/coinbase-samples/prime-sdk-go/client"
 	"github.com/coinbase-samples/prime-sdk-go/credentials"
@@ -16,7 +19,6 @@ import (
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 	"golang.org/x/net/http2"
-	"prime-send-receive-go/internal/prime/models"
 )
 
 type Service struct {
@@ -168,6 +170,73 @@ func (s *Service) CreateWallet(ctx context.Context, portfolioId, name, symbol, w
 		Name:   response.Name,
 		Symbol: response.Symbol,
 		Type:   response.Type,
+	}, nil
+}
+
+// CreateWithdrawal creates a withdrawal from a wallet
+func (s *Service) CreateWithdrawal(ctx context.Context, portfolioId, walletId, destinationAddress, amount, asset, idempotencyKey string) (*models.Withdrawal, error) {
+	s.logger.Info("Creating withdrawal via Prime API",
+		zap.String("portfolio_id", portfolioId),
+		zap.String("wallet_id", walletId),
+		zap.String("asset", asset),
+		zap.String("amount", amount),
+		zap.String("destination", destinationAddress))
+
+	// ETH-ethereum-mainnet --> ETH and ethereum and mainnet
+	symbol := strings.Split(asset, "-")[0]
+	/* TODO: multinetwork feature flag
+	networkId := strings.Split(asset, "-")[1]
+	networkType := strings.Split(asset, "-")[2]
+	*/
+
+	request := &transactions.CreateWalletWithdrawalRequest{
+		PortfolioId:     portfolioId,
+		SourceWalletId:  walletId,
+		Amount:          amount,
+		IdempotencyKey:  idempotencyKey,
+		Symbol:          symbol,
+		DestinationType: "DESTINATION_BLOCKCHAIN",
+		BlockchainAddress: &model.BlockchainAddress{
+			Address: destinationAddress,
+			/* TODO: multinetwork feature flag
+			Network: &model.NetworkDetails{
+				Id:   networkId,
+				Type: networkType,
+			},
+			*/
+		},
+	}
+	// Debug: Log the request structure
+	s.logger.Debug("Withdrawal request details",
+		zap.String("portfolio_id", request.PortfolioId),
+		zap.String("wallet_id", request.SourceWalletId),
+		zap.String("amount", request.Amount),
+		zap.String("destination_type", request.DestinationType),
+		zap.String("idempotency_key", request.IdempotencyKey),
+		zap.Any("blockchain_address", request.BlockchainAddress))
+
+	response, err := s.transactionsSvc.CreateWalletWithdrawal(ctx, request)
+	if err != nil {
+		s.logger.Error("Failed to create withdrawal",
+			zap.String("wallet_id", walletId),
+			zap.String("amount", amount),
+			zap.String("asset", asset),
+			zap.Error(err))
+		return nil, fmt.Errorf("unable to create withdrawal: %v", err)
+	}
+
+	s.logger.Info("✅ Withdrawal created successfully",
+		zap.String("activity_id", response.ActivityId),
+		zap.String("wallet_id", walletId),
+		zap.String("amount", amount),
+		zap.String("asset", asset))
+
+	return &models.Withdrawal{
+		ActivityId:     response.ActivityId,
+		Asset:          asset,
+		Amount:         amount,
+		Destination:    destinationAddress,
+		IdempotencyKey: idempotencyKey,
 	}, nil
 }
 

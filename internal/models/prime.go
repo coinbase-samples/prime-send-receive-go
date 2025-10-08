@@ -21,3 +21,12 @@ type DepositAddress struct {
 	Network string
 	Asset   string
 }
+
+// Withdrawal represents a Prime withdrawal transaction
+type Withdrawal struct {
+	ActivityId     string
+	Asset          string
+	Amount         string
+	Destination    string
+	IdempotencyKey string
+}
