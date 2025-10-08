@@ -49,16 +49,20 @@ func (d *SendReceiveListener) processWithdrawal(ctx context.Context, tx models.P
 		return nil
 	}
 
+	assetNetwork := fmt.Sprintf("%s-%s", tx.Symbol, tx.Network)
+
 	d.logger.Info("Processing completed withdrawal",
 		zap.String("transaction_id", tx.Id),
 		zap.String("user_id", userId),
 		zap.String("idempotency_key", tx.IdempotencyKey),
-		zap.String("asset_network", wallet.AssetNetwork),
+		zap.String("asset_symbol", tx.Symbol),
+		zap.String("network", tx.Network),
+		zap.String("asset_network", assetNetwork),
 		zap.String("amount", amount.String()),
 		zap.Time("created_at", tx.CreatedAt),
 		zap.Time("completed_at", tx.CompletedAt))
 
-	result, err := d.apiService.ProcessWithdrawal(ctx, userId, wallet.AssetNetwork, amount, tx.Id)
+	result, err := d.apiService.ProcessWithdrawal(ctx, userId, assetNetwork, amount, tx.Id)
 	if err != nil {
 		if strings.Contains(err.Error(), "duplicate transaction") {
 			d.logger.Info("Duplicate withdrawal detected - already processed, marking as handled",

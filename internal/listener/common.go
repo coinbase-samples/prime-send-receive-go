@@ -69,15 +69,7 @@ func NewSendReceiveListener(
 func (d *SendReceiveListener) LoadMonitoredWallets(ctx context.Context, assetsFile string) error {
 	d.logger.Info("Loading monitored wallets from database")
 
-	// Query all addresses to get unique wallet IDs
-	users, err := d.dbService.GetUsers(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to get users: %v", err)
-	}
-
-	walletMap := make(map[string]models.WalletInfo)
-
-	// Load asset configs from file
+	// Load asset configs from file to get unique asset symbols
 	assetConfigs, err := common.LoadAssetConfig(assetsFile)
 	if err != nil {
 		return fmt.Errorf("failed to load assets from YAML: %v", err)
@@ -87,26 +79,41 @@ func (d *SendReceiveListener) LoadMonitoredWallets(ctx context.Context, assetsFi
 		zap.String("file", assetsFile),
 		zap.Int("count", len(assetConfigs)))
 
+	// Get unique asset symbols (avoid duplicate queries for same asset on different networks)
+	assetSymbols := make(map[string]bool)
+	for _, assetConfig := range assetConfigs {
+		assetSymbols[assetConfig.Symbol] = true
+	}
+
+	d.logger.Info("Unique assets to monitor",
+		zap.Int("count", len(assetSymbols)))
+
+	// Query all users
+	users, err := d.dbService.GetUsers(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get users: %v", err)
+	}
+
+	// Map to track unique wallet IDs and their asset symbols
+	walletMap := make(map[string]models.WalletInfo)
+
+	// Query addresses for each user and unique asset symbol
 	for _, user := range users {
-		for _, assetConfig := range assetConfigs {
-			// Use composite asset name (symbol-network) for wallet identification
-			compositeAsset := fmt.Sprintf("%s-%s", assetConfig.Symbol, assetConfig.Network)
-			addresses, err := d.dbService.GetAddresses(ctx, user.Id, assetConfig.Symbol, assetConfig.Network)
+		for assetSymbol := range assetSymbols {
+			// Get all addresses for this user and asset (across all networks)
+			addresses, err := d.dbService.GetAllUserAddresses(ctx, user.Id)
 			if err != nil {
-				d.logger.Error("Failed to get addresses for user/asset",
+				d.logger.Error("Failed to get addresses for user",
 					zap.String("user_id", user.Id),
-					zap.String("asset", assetConfig.Symbol),
-					zap.String("network", assetConfig.Network),
 					zap.Error(err))
 				continue
 			}
 
 			for _, addr := range addresses {
-				if addr.WalletId != "" {
+				if addr.Asset == assetSymbol && addr.WalletId != "" {
 					walletMap[addr.WalletId] = models.WalletInfo{
-						Id:           addr.WalletId,
-						AssetNetwork: compositeAsset,
-						Network:      assetConfig.Network,
+						Id:          addr.WalletId,
+						AssetSymbol: assetSymbol,
 					}
 				}
 			}

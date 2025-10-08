@@ -92,7 +92,7 @@ func (d *SendReceiveListener) pollWallets(ctx context.Context) {
 			if err := d.pollWallet(ctx, w, since); err != nil {
 				d.logger.Error("Failed to poll wallet",
 					zap.String("wallet_id", w.Id),
-					zap.String("asset_network", w.AssetNetwork),
+					zap.String("asset_symbol", w.AssetSymbol),
 					zap.Error(err))
 			}
 		}(wallet)
@@ -107,7 +107,7 @@ func (d *SendReceiveListener) pollWallets(ctx context.Context) {
 func (d *SendReceiveListener) pollWallet(ctx context.Context, wallet models.WalletInfo, since time.Time) error {
 	d.logger.Info("Polling wallet for transactions",
 		zap.String("wallet_id", wallet.Id),
-		zap.String("asset_network", wallet.AssetNetwork),
+		zap.String("asset_symbol", wallet.AssetSymbol),
 		zap.Time("since", since))
 
 	// Fetch transactions from Prime API
@@ -118,7 +118,7 @@ func (d *SendReceiveListener) pollWallet(ctx context.Context, wallet models.Wall
 
 	d.logger.Info("Fetched wallet transactions",
 		zap.String("wallet_id", wallet.Id),
-		zap.String("asset_network", wallet.AssetNetwork),
+		zap.String("asset_symbol", wallet.AssetSymbol),
 		zap.Int("transaction_count", len(transactions)))
 
 	for i, tx := range transactions {
@@ -193,9 +193,9 @@ func (d *SendReceiveListener) performStartupRecovery(ctx context.Context) error 
 		if err != nil {
 			d.logger.Error("Failed to recover transactions for wallet",
 				zap.String("wallet_id", wallet.Id),
-				zap.String("asset_network", wallet.AssetNetwork),
+				zap.String("asset_symbol", wallet.AssetSymbol),
 				zap.Error(err))
-			failedWallets = append(failedWallets, fmt.Sprintf("%s(%s)", wallet.AssetNetwork, wallet.Id))
+			failedWallets = append(failedWallets, fmt.Sprintf("%s(%s)", wallet.AssetSymbol, wallet.Id))
 			// Continue with other wallets
 			continue
 		}
@@ -228,7 +228,7 @@ func (d *SendReceiveListener) performStartupRecovery(ctx context.Context) error 
 func (d *SendReceiveListener) recoverWalletTransactions(ctx context.Context, wallet models.WalletInfo, since time.Time) (int, error) {
 	d.logger.Debug("Recovering transactions for wallet",
 		zap.String("wallet_id", wallet.Id),
-		zap.String("asset_network", wallet.AssetNetwork),
+		zap.String("asset_symbol", wallet.AssetSymbol),
 		zap.Time("since", since))
 
 	// Fetch transactions from Prime API
@@ -239,7 +239,7 @@ func (d *SendReceiveListener) recoverWalletTransactions(ctx context.Context, wal
 
 	d.logger.Debug("Fetched transactions for recovery",
 		zap.String("wallet_id", wallet.Id),
-		zap.String("asset_network", wallet.AssetNetwork),
+		zap.String("asset_symbol", wallet.AssetSymbol),
 		zap.Int("transaction_count", len(transactions)))
 
 	var recovered int
@@ -255,7 +255,8 @@ func (d *SendReceiveListener) recoverWalletTransactions(ctx context.Context, wal
 			recovered++
 			d.logger.Info("Recovered transaction",
 				zap.String("transaction_id", tx.Id),
-				zap.String("asset_network", wallet.AssetNetwork),
+				zap.String("asset_symbol", tx.Symbol),
+				zap.String("network", tx.Network),
 				zap.String("amount", tx.Amount))
 		}
 	}
