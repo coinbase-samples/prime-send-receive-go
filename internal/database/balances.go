@@ -44,7 +44,11 @@ func (s *SubledgerService) GetAllBalances(ctx context.Context, userId string) ([
 		s.logger.Error("Failed to get all balances", zap.String("user_id", userId), zap.Error(err))
 		return nil, fmt.Errorf("failed to get all balances: %v", err)
 	}
-	defer rows.Close()
+	defer func(rows *sql.Rows) {
+		if err := rows.Close(); err != nil {
+			s.logger.Warn("Failed to close rows", zap.Error(err))
+		}
+	}(rows)
 
 	var balances []models.AccountBalance
 	for rows.Next() {
@@ -62,6 +66,12 @@ func (s *SubledgerService) GetAllBalances(ctx context.Context, userId string) ([
 		}
 
 		balances = append(balances, balance)
+	}
+
+	// Check for errors during iteration
+	if err := rows.Err(); err != nil {
+		s.logger.Error("Error during balance row iteration", zap.Error(err))
+		return nil, fmt.Errorf("error iterating balance rows: %v", err)
 	}
 
 	s.logger.Debug("Retrieved all balances", zap.String("user_id", userId), zap.Int("count", len(balances)))

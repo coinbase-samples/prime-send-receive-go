@@ -212,9 +212,8 @@ func (s *SubledgerService) GetTransactionHistory(ctx context.Context, userId, as
 		return nil, fmt.Errorf("failed to get transaction history: %v", err)
 	}
 	defer func(rows *sql.Rows) {
-		err := rows.Close()
-		if err != nil {
-
+		if err := rows.Close(); err != nil {
+			s.logger.Warn("Failed to close rows", zap.Error(err))
 		}
 	}(rows)
 
@@ -246,6 +245,12 @@ func (s *SubledgerService) GetTransactionHistory(ctx context.Context, userId, as
 		}
 
 		transactions = append(transactions, tx)
+	}
+
+	// Check for errors during iteration
+	if err := rows.Err(); err != nil {
+		s.logger.Error("Error during transaction row iteration", zap.Error(err))
+		return nil, fmt.Errorf("error iterating transaction rows: %v", err)
 	}
 
 	return transactions, nil

@@ -49,7 +49,11 @@ func (s *Service) GetAddresses(ctx context.Context, userId string, asset string)
 			zap.Error(err))
 		return nil, fmt.Errorf("unable to query addresses: %v", err)
 	}
-	defer rows.Close()
+	defer func(rows *sql.Rows) {
+		if err := rows.Close(); err != nil {
+			s.logger.Warn("Failed to close rows", zap.Error(err))
+		}
+	}(rows)
 
 	var addresses []models.Address
 	for rows.Next() {
@@ -60,6 +64,12 @@ func (s *Service) GetAddresses(ctx context.Context, userId string, asset string)
 			return nil, fmt.Errorf("unable to scan address row: %v", err)
 		}
 		addresses = append(addresses, addr)
+	}
+
+	// Check for errors during iteration
+	if err := rows.Err(); err != nil {
+		s.logger.Error("Error during address row iteration", zap.Error(err))
+		return nil, fmt.Errorf("error iterating address rows: %v", err)
 	}
 
 	s.logger.Debug("Retrieved addresses",

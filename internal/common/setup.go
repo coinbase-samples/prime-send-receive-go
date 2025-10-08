@@ -2,7 +2,9 @@ package common
 
 import (
 	"context"
+	"fmt"
 	"log"
+	"os"
 	"strings"
 
 	"prime-send-receive-go/internal/config"
@@ -45,7 +47,7 @@ func InitializeServices(ctx context.Context, logger *zap.Logger, cfg *config.Con
 	}
 
 	logger.Info("Loading Prime API credentials")
-	creds, err := credentials.ReadEnvCredentials("PRIME_CREDENTIALS")
+	creds, err := loadPrimeCredentials()
 	if err != nil {
 		dbService.Close()
 		return nil, err
@@ -79,6 +81,22 @@ func (cs *Services) Close() {
 	if cs.DbService != nil {
 		cs.DbService.Close()
 	}
+}
+
+func loadPrimeCredentials() (*credentials.Credentials, error) {
+	accessKey := os.Getenv("PRIME_ACCESS_KEY")
+	passphrase := os.Getenv("PRIME_PASSPHRASE")
+	signingKey := os.Getenv("PRIME_SIGNING_KEY")
+
+	if accessKey == "" || passphrase == "" || signingKey == "" {
+		return nil, fmt.Errorf("missing required Prime API credentials: PRIME_ACCESS_KEY, PRIME_PASSPHRASE, PRIME_SIGNING_KEY")
+	}
+
+	return &credentials.Credentials{
+		AccessKey:  accessKey,
+		Passphrase: passphrase,
+		SigningKey: signingKey,
+	}, nil
 }
 
 func isIgnorableSyncError(err error) bool {

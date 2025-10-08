@@ -19,9 +19,8 @@ func (s *Service) GetUsers(ctx context.Context) ([]models.User, error) {
 		return nil, fmt.Errorf("unable to query users: %v", err)
 	}
 	defer func(rows *sql.Rows) {
-		err := rows.Close()
-		if err != nil {
-
+		if err := rows.Close(); err != nil {
+			s.logger.Warn("Failed to close rows", zap.Error(err))
 		}
 	}(rows)
 
@@ -35,6 +34,12 @@ func (s *Service) GetUsers(ctx context.Context) ([]models.User, error) {
 		}
 
 		users = append(users, user)
+	}
+
+	// Check for errors during iteration
+	if err := rows.Err(); err != nil {
+		s.logger.Error("Error during user row iteration", zap.Error(err))
+		return nil, fmt.Errorf("error iterating user rows: %v", err)
 	}
 
 	s.logger.Info("Retrieved users", zap.Int("count", len(users)))
