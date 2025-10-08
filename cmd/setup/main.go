@@ -8,7 +8,7 @@ import (
 
 	"prime-send-receive-go/internal/common"
 	"prime-send-receive-go/internal/config"
-	"prime-send-receive-go/internal/prime/models"
+	"prime-send-receive-go/internal/models"
 
 	"go.uber.org/zap"
 )
@@ -74,12 +74,16 @@ func generateAddresses(ctx context.Context, logger *zap.Logger) {
 			zap.String("email", user.Email))
 
 		for _, assetConfig := range assetConfigs {
+			// Use composite asset-network format consistently
+			compositeAsset := fmt.Sprintf("%s-%s", assetConfig.Symbol, assetConfig.Network)
+
 			logger.Info("Processing asset",
 				zap.String("user_id", user.Id),
 				zap.String("asset", assetConfig.Symbol),
-				zap.String("network", assetConfig.Network))
+				zap.String("network", assetConfig.Network),
+				zap.String("composite_asset", compositeAsset))
 
-			existingAddresses, err := services.DbService.GetAddresses(ctx, user.Id, assetConfig.Symbol)
+			existingAddresses, err := services.DbService.GetAddresses(ctx, user.Id, compositeAsset)
 			if err != nil {
 				logger.Error("Error checking existing addresses",
 					zap.String("user_id", user.Id),
@@ -151,7 +155,8 @@ func generateAddresses(ctx context.Context, logger *zap.Logger) {
 				zap.String("network", assetConfig.Network),
 				zap.String("address", depositAddress.Address))
 
-			storedAddress, err := services.DbService.StoreAddress(ctx, user.Id, assetConfig.Symbol, assetConfig.Network, depositAddress.Address, targetWallet.Id, depositAddress.Id)
+			// Store with composite asset-network format (compositeAsset defined above)
+			storedAddress, err := services.DbService.StoreAddress(ctx, user.Id, compositeAsset, assetConfig.Network, depositAddress.Address, targetWallet.Id, depositAddress.Id)
 			if err != nil {
 				logger.Error("Error storing address to database",
 					zap.String("asset", assetConfig.Symbol),

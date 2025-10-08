@@ -8,7 +8,7 @@ import (
 
 	"github.com/shopspring/decimal"
 	"go.uber.org/zap"
-	"prime-send-receive-go/internal/listener/models"
+	"prime-send-receive-go/internal/models"
 )
 
 // processWithdrawal processes a withdrawal transaction

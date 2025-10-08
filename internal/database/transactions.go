@@ -9,7 +9,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
 	"go.uber.org/zap"
-	"prime-send-receive-go/internal/database/models"
+	"prime-send-receive-go/internal/models"
 )
 
 // ProcessTransaction atomically updates balance and records transaction

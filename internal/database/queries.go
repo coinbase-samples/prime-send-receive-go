@@ -16,6 +16,11 @@ const (
 		FROM users
 		WHERE id = ? AND active = 1`
 
+	queryGetUserByEmail = `
+		SELECT id, name, email, created_at, updated_at
+		FROM users
+		WHERE email = ? AND active = 1`
+
 	// Address queries
 	queryInsertAddress = `
 		INSERT INTO addresses (id, user_id, asset, network, address, wallet_id, account_identifier)
@@ -27,6 +32,12 @@ const (
 		FROM addresses
 		WHERE user_id = ? AND asset = ?
 		ORDER BY created_at DESC`
+
+	queryGetAllUserAddresses = `
+		SELECT id, user_id, asset, network, address, wallet_id, account_identifier, created_at
+		FROM addresses
+		WHERE user_id = ?
+		ORDER BY asset, created_at DESC`
 
 	queryFindUserByAddress = `
 		SELECT u.id, u.name, u.email, u.created_at, u.updated_at,

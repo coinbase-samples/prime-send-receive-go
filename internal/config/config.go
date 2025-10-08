@@ -5,30 +5,11 @@ import (
 	"os"
 	"strconv"
 	"time"
+
+	"prime-send-receive-go/internal/models"
 )
 
-type Config struct {
-	Database DatabaseConfig
-	Listener ListenerConfig
-}
-
-type DatabaseConfig struct {
-	Path            string
-	MaxOpenConns    int
-	MaxIdleConns    int
-	ConnMaxLifetime time.Duration
-	ConnMaxIdleTime time.Duration
-	PingTimeout     time.Duration
-}
-
-type ListenerConfig struct {
-	LookbackWindow  time.Duration
-	PollingInterval time.Duration
-	CleanupInterval time.Duration
-	AssetsFile      string
-}
-
-func Load() (*Config, error) {
+func Load() (*models.Config, error) {
 	lookbackWindow, err := getEnvDuration("LISTENER_LOOKBACK_WINDOW", 6*time.Hour)
 	if err != nil {
 		return nil, err
@@ -59,8 +40,8 @@ func Load() (*Config, error) {
 		return nil, err
 	}
 
-	return &Config{
-		Database: DatabaseConfig{
+	return &models.Config{
+		Database: models.DatabaseConfig{
 			Path:            getEnvString("DATABASE_PATH", "addresses.db"),
 			MaxOpenConns:    getEnvInt("DB_MAX_OPEN_CONNS", 25),
 			MaxIdleConns:    getEnvInt("DB_MAX_IDLE_CONNS", 5),
@@ -68,7 +49,7 @@ func Load() (*Config, error) {
 			ConnMaxIdleTime: connMaxIdleTime,
 			PingTimeout:     pingTimeout,
 		},
-		Listener: ListenerConfig{
+		Listener: models.ListenerConfig{
 			LookbackWindow:  lookbackWindow,
 			PollingInterval: pollingInterval,
 			CleanupInterval: cleanupInterval,

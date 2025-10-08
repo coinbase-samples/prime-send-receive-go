@@ -5,13 +5,15 @@ import (
 	"fmt"
 	"strings"
 
+	"prime-send-receive-go/internal/models"
+
 	"github.com/shopspring/decimal"
 	"go.uber.org/zap"
 )
 
 // ProcessDeposit handles incoming deposit notifications from Prime API
 // This is the main entry point for real deposit processing
-func (s *LedgerService) ProcessDeposit(ctx context.Context, address, asset string, amount decimal.Decimal, externalTxId string) (*DepositResult, error) {
+func (s *LedgerService) ProcessDeposit(ctx context.Context, address, asset string, amount decimal.Decimal, externalTxId string) (*models.DepositResult, error) {
 	s.logger.Info("Processing real deposit from Prime API",
 		zap.String("address", address),
 		zap.String("asset_network", asset),
@@ -25,7 +27,7 @@ func (s *LedgerService) ProcessDeposit(ctx context.Context, address, asset strin
 			zap.String("asset_network", asset),
 			zap.String("amount", amount.String()),
 			zap.String("external_tx_id", externalTxId))
-		return &DepositResult{
+		return &models.DepositResult{
 			Success: false,
 			Error:   "invalid deposit parameters",
 		}, nil
@@ -54,7 +56,7 @@ func (s *LedgerService) ProcessDeposit(ctx context.Context, address, asset strin
 				zap.Error(err))
 		}
 
-		return &DepositResult{
+		return &models.DepositResult{
 			Success: false,
 			Error:   err.Error(),
 		}, nil
@@ -65,7 +67,7 @@ func (s *LedgerService) ProcessDeposit(ctx context.Context, address, asset strin
 		s.logger.Error("User lookup failed after deposit processing",
 			zap.String("address", address),
 			zap.Error(err))
-		return &DepositResult{
+		return &models.DepositResult{
 			Success: false,
 			Error:   "user lookup failed after deposit",
 		}, nil
@@ -84,7 +86,7 @@ func (s *LedgerService) ProcessDeposit(ctx context.Context, address, asset strin
 		zap.String("amount", amount.String()),
 		zap.String("new_balance", newBalance.String()))
 
-	return &DepositResult{
+	return &models.DepositResult{
 		Success:    true,
 		UserId:     user.Id,
 		Asset:      asset,
