@@ -17,7 +17,7 @@ import (
 func main() {
 	ctx := context.Background()
 
-	logger, loggerCleanup := common.InitializeLogger()
+	_, loggerCleanup := common.InitializeLogger()
 	defer loggerCleanup()
 
 	// Parse command line flags
@@ -29,10 +29,10 @@ func main() {
 
 	// Validate required flags
 	if *emailFlag == "" || *assetFlag == "" || *amountFlag == "" || *destinationFlag == "" {
-		logger.Fatal("All flags are required: --email, --asset, --amount, --destination")
+		zap.L().Fatal("All flags are required: --email, --asset, --amount, --destination")
 	}
 
-	logger.Info("Starting withdrawal process",
+	zap.L().Info("Starting withdrawal process",
 		zap.String("email", *emailFlag),
 		zap.String("asset", *assetFlag),
 		zap.String("amount", *amountFlag),
@@ -41,61 +41,61 @@ func main() {
 	// Parse amount
 	amount, err := decimal.NewFromString(*amountFlag)
 	if err != nil {
-		logger.Fatal("Invalid amount format", zap.String("amount", *amountFlag), zap.Error(err))
+		zap.L().Fatal("Invalid amount format", zap.String("amount", *amountFlag), zap.Error(err))
 	}
 
 	// Validate amount is positive
 	if amount.LessThanOrEqual(decimal.Zero) {
-		logger.Fatal("Amount must be greater than zero", zap.String("amount", amount.String()))
+		zap.L().Fatal("Amount must be greater than zero", zap.String("amount", amount.String()))
 	}
 
 	// Load configuration
 	cfg, err := config.Load()
 	if err != nil {
-		logger.Fatal("Failed to load config", zap.Error(err))
+		zap.L().Fatal("Failed to load config", zap.Error(err))
 	}
 
 	// Initialize services (both database and Prime API)
-	logger.Info("Initializing services")
-	services, err := common.InitializeServices(ctx, logger, cfg)
+	zap.L().Info("Initializing services")
+	services, err := common.InitializeServices(ctx, cfg)
 	if err != nil {
-		logger.Fatal("Failed to initialize services", zap.Error(err))
+		zap.L().Fatal("Failed to initialize services", zap.Error(err))
 	}
 	defer services.Close()
 
 	// Step 1: Find user by email
-	logger.Info("Looking up user by email", zap.String("email", *emailFlag))
+	zap.L().Info("Looking up user by email", zap.String("email", *emailFlag))
 	targetUser, err := services.DbService.GetUserByEmail(ctx, *emailFlag)
 	if err != nil {
-		logger.Fatal("User not found", zap.String("email", *emailFlag), zap.Error(err))
+		zap.L().Fatal("User not found", zap.String("email", *emailFlag), zap.Error(err))
 	}
 
-	logger.Info("User found",
+	zap.L().Info("User found",
 		zap.String("user_id", targetUser.Id),
 		zap.String("user_name", targetUser.Name),
 		zap.String("user_email", targetUser.Email))
 
 	// Step 2: Check current balance
-	logger.Info("Checking user balance",
+	zap.L().Info("Checking user balance",
 		zap.String("user_id", targetUser.Id),
 		zap.String("asset", *assetFlag))
 
 	currentBalance, err := services.DbService.GetUserBalance(ctx, targetUser.Id, *assetFlag)
 	if err != nil {
-		logger.Fatal("Failed to get user balance",
+		zap.L().Fatal("Failed to get user balance",
 			zap.String("user_id", targetUser.Id),
 			zap.String("asset", *assetFlag),
 			zap.Error(err))
 	}
 
-	logger.Info("Current balance retrieved",
+	zap.L().Info("Current balance retrieved",
 		zap.String("user_id", targetUser.Id),
 		zap.String("asset", *assetFlag),
 		zap.String("balance", currentBalance.String()))
 
 	// Step 3: Verify sufficient balance
 	if currentBalance.LessThan(amount) {
-		logger.Fatal("Insufficient balance",
+		zap.L().Fatal("Insufficient balance",
 			zap.String("user", targetUser.Email),
 			zap.String("asset", *assetFlag),
 			zap.String("current_balance", currentBalance.String()),
@@ -103,7 +103,7 @@ func main() {
 			zap.String("shortfall", amount.Sub(currentBalance).String()))
 	}
 
-	logger.Info("✅ Balance verification successful",
+	zap.L().Info("✅ Balance verification successful",
 		zap.String("user", targetUser.Email),
 		zap.String("asset", *assetFlag),
 		zap.String("current_balance", currentBalance.String()),
@@ -126,18 +126,18 @@ func main() {
 	// Parse asset flag (format: SYMBOL-network-type, e.g., ETH-ethereum-mainnet)
 	assetParts := strings.SplitN(*assetFlag, "-", 2)
 	if len(assetParts) != 2 {
-		logger.Fatal("Invalid asset format. Expected format: SYMBOL-network-type (e.g., ETH-ethereum-mainnet)",
+		zap.L().Fatal("Invalid asset format. Expected format: SYMBOL-network-type (e.g., ETH-ethereum-mainnet)",
 			zap.String("asset", *assetFlag))
 	}
 	symbol := assetParts[0]
 	network := assetParts[1]
 
-	logger.Info("Looking up wallet ID for asset",
+	zap.L().Info("Looking up wallet ID for asset",
 		zap.String("asset", symbol),
 		zap.String("network", network))
 	addresses, err := services.DbService.GetAddresses(ctx, targetUser.Id, symbol, network)
 	if err != nil {
-		logger.Fatal("Failed to get wallet for asset",
+		zap.L().Fatal("Failed to get wallet for asset",
 			zap.String("user_id", targetUser.Id),
 			zap.String("asset", symbol),
 			zap.String("network", network),
@@ -145,14 +145,14 @@ func main() {
 	}
 
 	if len(addresses) == 0 {
-		logger.Fatal("No wallet found for asset",
+		zap.L().Fatal("No wallet found for asset",
 			zap.String("user_id", targetUser.Id),
 			zap.String("asset", symbol),
 			zap.String("network", network))
 	}
 
 	walletId := addresses[0].WalletId
-	logger.Info("Found wallet for asset",
+	zap.L().Info("Found wallet for asset",
 		zap.String("wallet_id", walletId),
 		zap.String("asset", *assetFlag))
 
@@ -162,13 +162,13 @@ func main() {
 	uuidSegments := strings.Split(uuid.New().String(), "-")
 	idempotencyKey := userIdSegments[0] + "-" + strings.Join(uuidSegments[1:], "-")
 
-	logger.Info("Generated idempotency key",
+	zap.L().Info("Generated idempotency key",
 		zap.String("user_id", targetUser.Id),
 		zap.String("idempotency_key", idempotencyKey))
 
 	// Step 5: Create withdrawal via Prime API
 	fmt.Println("🔄 Creating withdrawal via Prime API...")
-	logger.Info("Creating withdrawal",
+	zap.L().Info("Creating withdrawal",
 		zap.String("portfolio_id", services.DefaultPortfolio.Id),
 		zap.String("wallet_id", walletId),
 		zap.String("amount", amount.String()),
@@ -184,7 +184,7 @@ func main() {
 		idempotencyKey,
 	)
 	if err != nil {
-		logger.Fatal("Failed to create withdrawal via Prime API", zap.Error(err))
+		zap.L().Fatal("Failed to create withdrawal via Prime API", zap.Error(err))
 	}
 
 	fmt.Printf("✅ Withdrawal created successfully!\n")
@@ -194,10 +194,10 @@ func main() {
 
 	/* Let listener handle this
 	// Step 6: Record withdrawal in database (negative amount)
-	logger.Info("Recording withdrawal in database")
+	zap.L().Info("Recording withdrawal in database")
 	err = services.DbService.ProcessWithdrawal(ctx, targetUser.Id, *assetFlag, amount, withdrawal.ActivityId)
 	if err != nil {
-		logger.Fatal("Failed to record withdrawal in database",
+		zap.L().Fatal("Failed to record withdrawal in database",
 			zap.String("activity_id", withdrawal.ActivityId),
 			zap.Error(err))
 	}
@@ -207,7 +207,7 @@ func main() {
 	fmt.Println()
 	*/
 
-	logger.Info("Withdrawal completed successfully",
+	zap.L().Info("Withdrawal completed successfully",
 		zap.String("activity_id", withdrawal.ActivityId),
 		zap.String("user_id", targetUser.Id),
 		zap.String("asset", *assetFlag),

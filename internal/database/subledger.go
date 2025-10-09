@@ -2,20 +2,16 @@ package database
 
 import (
 	"database/sql"
-
-	"go.uber.org/zap"
 )
 
 // SubledgerService handles subledger operations
 type SubledgerService struct {
-	db     *sql.DB
-	logger *zap.Logger
+	db *sql.DB
 }
 
-func NewSubledgerService(db *sql.DB, logger *zap.Logger) *SubledgerService {
+func NewSubledgerService(db *sql.DB) *SubledgerService {
 	return &SubledgerService{
-		db:     db,
-		logger: logger,
+		db: db,
 	}
 }
 

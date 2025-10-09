@@ -18,31 +18,30 @@ import (
 func main() {
 	cfg, err := config.Load()
 	if err != nil {
-		logger, _ := zap.NewProduction()
-		logger.Fatal("Failed to load configuration", zap.Error(err))
+		_, _ = zap.NewProduction()
+		zap.L().Fatal("Failed to load configuration", zap.Error(err))
 	}
 
-	logger, loggerCleanup := common.InitializeLogger()
+	_, loggerCleanup := common.InitializeLogger()
 	defer loggerCleanup()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	logger.Info("Starting Prime Send/Receive Listener")
+	zap.L().Info("Starting Prime Send/Receive Listener")
 
-	services, err := common.InitializeServices(ctx, logger, cfg)
+	services, err := common.InitializeServices(ctx, cfg)
 	if err != nil {
-		logger.Fatal("Failed to initialize services", zap.Error(err))
+		zap.L().Fatal("Failed to initialize services", zap.Error(err))
 	}
 	defer services.Close()
 
-	apiService := api.NewLedgerService(services.DbService, logger)
+	apiService := api.NewLedgerService(services.DbService)
 
 	sendReceiveListener := listener.NewSendReceiveListener(
 		services.PrimeService,
 		apiService,
 		services.DbService,
-		logger,
 		services.DefaultPortfolio.Id,
 		cfg.Listener.LookbackWindow,
 		cfg.Listener.PollingInterval,
@@ -50,17 +49,17 @@ func main() {
 	)
 
 	if err := sendReceiveListener.Start(ctx, cfg.Listener.AssetsFile); err != nil {
-		logger.Fatal("Failed to start send/receive listener", zap.Error(err))
+		zap.L().Fatal("Failed to start send/receive listener", zap.Error(err))
 	}
 
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
-	logger.Info("Send/Receive listener running - waiting for transactions...")
-	logger.Info("Press Ctrl+C to stop")
+	zap.L().Info("Send/Receive listener running - waiting for transactions...")
+	zap.L().Info("Press Ctrl+C to stop")
 
 	<-sigChan
-	logger.Info("Shutdown signal received, stopping send/receive listener...")
+	zap.L().Info("Shutdown signal received, stopping send/receive listener...")
 
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer shutdownCancel()
@@ -73,8 +72,8 @@ func main() {
 
 	select {
 	case <-done:
-		logger.Info("Send/Receive listener stopped gracefully")
+		zap.L().Info("Send/Receive listener stopped gracefully")
 	case <-shutdownCtx.Done():
-		logger.Warn("Forced shutdown after timeout")
+		zap.L().Warn("Forced shutdown after timeout")
 	}
 }

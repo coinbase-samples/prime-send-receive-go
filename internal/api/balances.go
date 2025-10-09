@@ -18,7 +18,7 @@ func (s *LedgerService) GetUserBalance(ctx context.Context, userId, asset string
 
 	balance, err := s.db.GetUserBalance(ctx, userId, asset)
 	if err != nil {
-		s.logger.Error("Failed to get user balance",
+		zap.L().Error("Failed to get user balance",
 			zap.String("user_id", userId),
 			zap.String("asset_network", asset),
 			zap.Error(err))
@@ -36,7 +36,7 @@ func (s *LedgerService) GetUserBalances(ctx context.Context, userId string) ([]m
 
 	balances, err := s.db.GetAllUserBalances(ctx, userId)
 	if err != nil {
-		s.logger.Error("Failed to get user balances", zap.String("user_id", userId), zap.Error(err))
+		zap.L().Error("Failed to get user balances", zap.String("user_id", userId), zap.Error(err))
 		return nil, fmt.Errorf("failed to retrieve balances")
 	}
 
@@ -66,7 +66,7 @@ func (s *LedgerService) GetTransactionHistory(ctx context.Context, userId, asset
 
 	transactions, err := s.db.GetTransactionHistory(ctx, userId, asset, limit, offset)
 	if err != nil {
-		s.logger.Error("Failed to get transaction history",
+		zap.L().Error("Failed to get transaction history",
 			zap.String("user_id", userId),
 			zap.String("asset_network", asset),
 			zap.Error(err))

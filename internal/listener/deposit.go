@@ -14,7 +14,7 @@ import (
 // processDeposit processes a deposit transaction
 func (d *SendReceiveListener) processDeposit(ctx context.Context, tx models.PrimeTransaction, wallet models.WalletInfo) error {
 	if tx.Status != "TRANSACTION_IMPORTED" {
-		d.logger.Debug("Skipping non-imported deposit - waiting for completion",
+		zap.L().Debug("Skipping non-imported deposit - waiting for completion",
 			zap.String("transaction_id", tx.Id),
 			zap.String("status", tx.Status),
 			zap.String("symbol", tx.Symbol),
@@ -29,7 +29,7 @@ func (d *SendReceiveListener) processDeposit(ctx context.Context, tx models.Prim
 	}
 
 	if amount.LessThanOrEqual(decimal.Zero) {
-		d.logger.Debug("Skipping zero/negative amount transaction",
+		zap.L().Debug("Skipping zero/negative amount transaction",
 			zap.String("transaction_id", tx.Id),
 			zap.String("amount", amount.String()))
 		return nil
@@ -38,19 +38,19 @@ func (d *SendReceiveListener) processDeposit(ctx context.Context, tx models.Prim
 	var lookupAddress string
 	if tx.TransferTo.AccountIdentifier != "" {
 		lookupAddress = tx.TransferTo.AccountIdentifier
-		d.logger.Debug("Using account_identifier for address lookup",
+		zap.L().Debug("Using account_identifier for address lookup",
 			zap.String("transaction_id", tx.Id),
 			zap.String("account_identifier", tx.TransferTo.AccountIdentifier),
 			zap.String("address", tx.TransferTo.Address))
 	} else {
 		lookupAddress = tx.TransferTo.Address
-		d.logger.Debug("Using address for lookup",
+		zap.L().Debug("Using address for lookup",
 			zap.String("transaction_id", tx.Id),
 			zap.String("address", tx.TransferTo.Address))
 	}
 
 	if lookupAddress == "" {
-		d.logger.Debug("No address or account_identifier found in transfer_to",
+		zap.L().Debug("No address or account_identifier found in transfer_to",
 			zap.String("transaction_id", tx.Id),
 			zap.String("transfer_to_type", tx.TransferTo.Type),
 			zap.String("transfer_to_value", tx.TransferTo.Value))
@@ -58,8 +58,9 @@ func (d *SendReceiveListener) processDeposit(ctx context.Context, tx models.Prim
 	}
 
 	assetNetwork := fmt.Sprintf("%s-%s", tx.Symbol, tx.Network)
+	assetNetwork = strings.TrimSuffix(assetNetwork, "-")
 
-	d.logger.Info("Processing imported deposit",
+	zap.L().Info("Processing imported deposit",
 		zap.String("transaction_id", tx.Id),
 		zap.String("lookup_address", lookupAddress),
 		zap.String("deposit_address", tx.TransferTo.Address),
@@ -74,13 +75,13 @@ func (d *SendReceiveListener) processDeposit(ctx context.Context, tx models.Prim
 	result, err := d.apiService.ProcessDeposit(ctx, lookupAddress, assetNetwork, amount, tx.Id)
 	if err != nil {
 		if strings.Contains(err.Error(), "duplicate transaction") {
-			d.logger.Info("Duplicate transaction detected - already processed, marking as handled",
+			zap.L().Info("Duplicate transaction detected - already processed, marking as handled",
 				zap.String("transaction_id", tx.Id))
 			d.markTransactionProcessed(tx.Id)
 			return nil
 		}
 		if strings.Contains(err.Error(), "no user found for address") {
-			d.logger.Warn("Deposit to unrecognized address - marking as processed to avoid repeated errors",
+			zap.L().Warn("Deposit to unrecognized address - marking as processed to avoid repeated errors",
 				zap.String("transaction_id", tx.Id),
 				zap.String("address", lookupAddress),
 				zap.String("asset_network", assetNetwork),
@@ -94,20 +95,20 @@ func (d *SendReceiveListener) processDeposit(ctx context.Context, tx models.Prim
 	if !result.Success {
 		// Check if this is a duplicate transaction error
 		if strings.Contains(result.Error, "duplicate transaction") {
-			d.logger.Info("Duplicate transaction detected - already processed, marking as handled",
+			zap.L().Info("Duplicate transaction detected - already processed, marking as handled",
 				zap.String("transaction_id", tx.Id))
 			d.markTransactionProcessed(tx.Id)
 			return nil
 		}
 		// Check if this is an unrecognized address
 		if strings.Contains(result.Error, "no user found for address") {
-			d.logger.Warn("Deposit to unrecognized address - marking as processed to avoid repeated errors",
+			zap.L().Warn("Deposit to unrecognized address - marking as processed to avoid repeated errors",
 				zap.String("transaction_id", tx.Id),
 				zap.String("error", result.Error))
 			d.markTransactionProcessed(tx.Id)
 			return nil
 		}
-		d.logger.Warn("Deposit processing failed",
+		zap.L().Warn("Deposit processing failed",
 			zap.String("transaction_id", tx.Id),
 			zap.String("error", result.Error))
 		return fmt.Errorf("deposit processing failed: %s", result.Error)
@@ -115,7 +116,7 @@ func (d *SendReceiveListener) processDeposit(ctx context.Context, tx models.Prim
 
 	d.markTransactionProcessed(tx.Id)
 
-	d.logger.Info("Deposit processed successfully - balance updated",
+	zap.L().Info("Deposit processed successfully - balance updated",
 		zap.String("transaction_id", tx.Id),
 		zap.String("user_id", result.UserId),
 		zap.String("asset", result.Asset),

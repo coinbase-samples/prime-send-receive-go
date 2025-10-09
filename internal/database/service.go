@@ -16,12 +16,11 @@ import (
 
 type Service struct {
 	db        *sql.DB
-	logger    *zap.Logger
 	subledger *SubledgerService
 }
 
-func NewService(ctx context.Context, logger *zap.Logger, cfg models.DatabaseConfig) (*Service, error) {
-	logger.Info("Opening SQLite database", zap.String("file", cfg.Path))
+func NewService(ctx context.Context, cfg models.DatabaseConfig) (*Service, error) {
+	zap.L().Info("Opening SQLite database", zap.String("file", cfg.Path))
 	db, err := sql.Open("sqlite3", cfg.Path+"?_journal_mode=WAL&_synchronous=NORMAL&_cache_size=1000")
 	if err != nil {
 		return nil, fmt.Errorf("unable to open database: %v", err)
@@ -44,8 +43,8 @@ func NewService(ctx context.Context, logger *zap.Logger, cfg models.DatabaseConf
 		return nil, fmt.Errorf("unable to ping database: %v", err)
 	}
 
-	subledger := NewSubledgerService(db, logger)
-	service := &Service{db: db, logger: logger, subledger: subledger}
+	subledger := NewSubledgerService(db)
+	service := &Service{db: db, subledger: subledger}
 	if err := service.initSchema(); err != nil {
 		err := db.Close()
 		if err != nil {
@@ -63,7 +62,7 @@ func NewService(ctx context.Context, logger *zap.Logger, cfg models.DatabaseConf
 		return nil, fmt.Errorf("unable to initialize subledger schema: %v", err)
 	}
 
-	logger.Info("Database service initialized successfully")
+	zap.L().Info("Database service initialized successfully")
 	return service, nil
 }
 
@@ -134,9 +133,9 @@ func (s *Service) initSchema() error {
 	for _, user := range users {
 		_, err := s.db.Exec(queryInsertUser, user.id, user.name, user.email)
 		if err != nil {
-			s.logger.Error("Failed to insert user", zap.String("name", user.name), zap.Error(err))
+			zap.L().Error("Failed to insert user", zap.String("name", user.name), zap.Error(err))
 		} else {
-			s.logger.Debug("User created", zap.String("id", user.id), zap.String("name", user.name))
+			zap.L().Debug("User created", zap.String("id", user.id), zap.String("name", user.name))
 		}
 	}
 
@@ -161,13 +160,13 @@ func (s *Service) ProcessDeposit(ctx context.Context, address, asset string, amo
 	}
 
 	if user == nil {
-		s.logger.Warn("Deposit to unknown address", zap.String("address", address))
+		zap.L().Warn("Deposit to unknown address", zap.String("address", address))
 		return fmt.Errorf("no user found for address: %s", address)
 	}
 
 	// Verify asset matches
 	if addr.Asset != asset {
-		s.logger.Warn("Asset mismatch for deposit",
+		zap.L().Warn("Asset mismatch for deposit",
 			zap.String("address", address),
 			zap.String("expected_asset", addr.Asset),
 			zap.String("received_asset", asset))
@@ -179,7 +178,7 @@ func (s *Service) ProcessDeposit(ctx context.Context, address, asset string, amo
 		return fmt.Errorf("error processing deposit transaction: %v", err)
 	}
 
-	s.logger.Info("Deposit processed successfully",
+	zap.L().Info("Deposit processed successfully",
 		zap.String("user_id", user.Id),
 		zap.String("user_name", user.Name),
 		zap.String("asset_network", asset),
@@ -192,7 +191,7 @@ func (s *Service) ProcessDeposit(ctx context.Context, address, asset string, amo
 func (s *Service) ProcessWithdrawal(ctx context.Context, userId, asset string, amount decimal.Decimal, transactionId string) error {
 	user, err := s.GetUserById(ctx, userId)
 	if err != nil {
-		s.logger.Warn("Withdrawal for unknown user", zap.String("user_id", userId))
+		zap.L().Warn("Withdrawal for unknown user", zap.String("user_id", userId))
 		return fmt.Errorf("error getting user: %v", err)
 	}
 
@@ -202,7 +201,7 @@ func (s *Service) ProcessWithdrawal(ctx context.Context, userId, asset string, a
 		return fmt.Errorf("error getting current balance: %v", err)
 	}
 
-	s.logger.Info("Processing withdrawal information",
+	zap.L().Info("Processing withdrawal information",
 		zap.String("user_id", userId),
 		zap.String("asset_network", asset),
 		zap.String("current_balance", currentBalance.String()),
@@ -213,7 +212,7 @@ func (s *Service) ProcessWithdrawal(ctx context.Context, userId, asset string, a
 		return fmt.Errorf("error processing withdrawal transaction: %v", err)
 	}
 
-	s.logger.Info("Withdrawal processed successfully",
+	zap.L().Info("Withdrawal processed successfully",
 		zap.String("user_id", user.Id),
 		zap.String("user_name", user.Name),
 		zap.String("asset_network", asset),

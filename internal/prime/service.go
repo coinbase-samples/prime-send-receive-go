@@ -26,10 +26,9 @@ type Service struct {
 	portfoliosSvc   portfolios.PortfoliosService
 	walletsSvc      wallets.WalletsService
 	transactionsSvc transactions.TransactionsService
-	logger          *zap.Logger
 }
 
-func NewService(creds *credentials.Credentials, logger *zap.Logger) (*Service, error) {
+func NewService(creds *credentials.Credentials) (*Service, error) {
 	httpClient, err := createCustomHttpClient()
 	if err != nil {
 		return nil, fmt.Errorf("unable to create custom http client: %v", err)
@@ -42,7 +41,6 @@ func NewService(creds *credentials.Credentials, logger *zap.Logger) (*Service, e
 		portfoliosSvc:   portfolios.NewPortfoliosService(restClient),
 		walletsSvc:      wallets.NewWalletsService(restClient),
 		transactionsSvc: transactions.NewTransactionsService(restClient),
-		logger:          logger,
 	}, nil
 }
 
@@ -175,7 +173,7 @@ func (s *Service) CreateWallet(ctx context.Context, portfolioId, name, symbol, w
 
 // CreateWithdrawal creates a withdrawal from a wallet
 func (s *Service) CreateWithdrawal(ctx context.Context, portfolioId, walletId, destinationAddress, amount, asset, idempotencyKey string) (*models.Withdrawal, error) {
-	s.logger.Info("Creating withdrawal via Prime API",
+	zap.L().Info("Creating withdrawal via Prime API",
 		zap.String("portfolio_id", portfolioId),
 		zap.String("wallet_id", walletId),
 		zap.String("asset", asset),
@@ -207,7 +205,7 @@ func (s *Service) CreateWithdrawal(ctx context.Context, portfolioId, walletId, d
 		},
 	}
 	// Debug: Log the request structure
-	s.logger.Debug("Withdrawal request details",
+	zap.L().Debug("Withdrawal request details",
 		zap.String("portfolio_id", request.PortfolioId),
 		zap.String("wallet_id", request.SourceWalletId),
 		zap.String("amount", request.Amount),
@@ -217,7 +215,7 @@ func (s *Service) CreateWithdrawal(ctx context.Context, portfolioId, walletId, d
 
 	response, err := s.transactionsSvc.CreateWalletWithdrawal(ctx, request)
 	if err != nil {
-		s.logger.Error("Failed to create withdrawal",
+		zap.L().Error("Failed to create withdrawal",
 			zap.String("wallet_id", walletId),
 			zap.String("amount", amount),
 			zap.String("asset", asset),
@@ -225,7 +223,7 @@ func (s *Service) CreateWithdrawal(ctx context.Context, portfolioId, walletId, d
 		return nil, fmt.Errorf("unable to create withdrawal: %v", err)
 	}
 
-	s.logger.Info("✅ Withdrawal created successfully",
+	zap.L().Info("Withdrawal created successfully",
 		zap.String("activity_id", response.ActivityId),
 		zap.String("wallet_id", walletId),
 		zap.String("amount", amount),
@@ -242,7 +240,7 @@ func (s *Service) CreateWithdrawal(ctx context.Context, portfolioId, walletId, d
 
 // ListWalletTransactions fetches transactions for a specific wallet
 func (s *Service) ListWalletTransactions(ctx context.Context, portfolioId, walletId string, startTime time.Time) (*transactions.ListWalletTransactionsResponse, error) {
-	s.logger.Debug("🌐 Making Prime API request",
+	zap.L().Debug("Making Prime API request",
 		zap.String("portfolio_id", portfolioId),
 		zap.String("wallet_id", walletId),
 		zap.Time("start_time", startTime),
@@ -261,19 +259,19 @@ func (s *Service) ListWalletTransactions(ctx context.Context, portfolioId, walle
 
 	response, err := s.transactionsSvc.ListWalletTransactions(ctx, request)
 	if err != nil {
-		s.logger.Error("Failed to list wallet transactions",
+		zap.L().Error("Failed to list wallet transactions",
 			zap.String("wallet_id", walletId),
 			zap.Error(err))
 		return nil, fmt.Errorf("unable to list wallet transactions: %v", err)
 	}
 
-	s.logger.Debug("✅ Prime API response received",
+	zap.L().Debug("Prime API response received",
 		zap.String("wallet_id", walletId),
 		zap.Int("count", len(response.Transactions)))
 
 	// Log details of each transaction for debugging
 	for i, tx := range response.Transactions {
-		s.logger.Debug("📋 Transaction details",
+		zap.L().Debug("Transaction details",
 			zap.Int("index", i),
 			zap.String("id", tx.Id),
 			zap.String("type", tx.Type),

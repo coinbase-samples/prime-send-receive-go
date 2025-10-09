@@ -5,20 +5,16 @@ import (
 	"fmt"
 
 	"prime-send-receive-go/internal/database"
-
-	"go.uber.org/zap"
 )
 
 // LedgerService provides minimal API
 type LedgerService struct {
-	db     *database.Service
-	logger *zap.Logger
+	db *database.Service
 }
 
-func NewLedgerService(db *database.Service, logger *zap.Logger) *LedgerService {
+func NewLedgerService(db *database.Service) *LedgerService {
 	return &LedgerService{
-		db:     db,
-		logger: logger,
+		db: db,
 	}
 }
 

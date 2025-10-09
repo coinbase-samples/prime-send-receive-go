@@ -18,7 +18,7 @@ func (s *LedgerService) ProcessWithdrawal(ctx context.Context, userId, asset str
 		}, nil
 	}
 
-	s.logger.Info("Processing real withdrawal from Prime API",
+	zap.L().Info("Processing real withdrawal from Prime API",
 		zap.String("user_id", userId),
 		zap.String("asset_network", asset),
 		zap.String("amount", amount.String()),
@@ -27,13 +27,13 @@ func (s *LedgerService) ProcessWithdrawal(ctx context.Context, userId, asset str
 	err := s.db.ProcessWithdrawal(ctx, userId, asset, amount, externalTxId)
 	if err != nil {
 		if strings.Contains(err.Error(), "duplicate transaction") {
-			s.logger.Info("Duplicate withdrawal detected in API service",
+			zap.L().Info("Duplicate withdrawal detected in API service",
 				zap.String("user_id", userId),
 				zap.String("asset_network", asset),
 				zap.String("amount", amount.String()),
 				zap.String("external_tx_id", externalTxId))
 		} else {
-			s.logger.Error("Withdrawal processing failed",
+			zap.L().Error("Withdrawal processing failed",
 				zap.String("user_id", userId),
 				zap.String("asset_network", asset),
 				zap.String("amount", amount.String()),
@@ -48,7 +48,7 @@ func (s *LedgerService) ProcessWithdrawal(ctx context.Context, userId, asset str
 
 	users, err := s.db.GetUsers(ctx)
 	if err != nil {
-		s.logger.Error("User lookup failed after withdrawal processing",
+		zap.L().Error("User lookup failed after withdrawal processing",
 			zap.String("user_id", userId),
 			zap.Error(err))
 		return &models.DepositResult{
@@ -66,7 +66,7 @@ func (s *LedgerService) ProcessWithdrawal(ctx context.Context, userId, asset str
 	}
 
 	if user == nil {
-		s.logger.Error("User not found after withdrawal processing",
+		zap.L().Error("User not found after withdrawal processing",
 			zap.String("user_id", userId))
 		return &models.DepositResult{
 			Success: false,
@@ -76,7 +76,7 @@ func (s *LedgerService) ProcessWithdrawal(ctx context.Context, userId, asset str
 
 	newBalance, err := s.db.GetUserBalance(ctx, userId, asset)
 	if err != nil {
-		s.logger.Error("Balance lookup failed after withdrawal processing",
+		zap.L().Error("Balance lookup failed after withdrawal processing",
 			zap.String("user_id", userId),
 			zap.String("asset_network", asset),
 			zap.Error(err))
@@ -86,7 +86,7 @@ func (s *LedgerService) ProcessWithdrawal(ctx context.Context, userId, asset str
 		}, nil
 	}
 
-	s.logger.Info("Real withdrawal processed successfully",
+	zap.L().Info("Real withdrawal processed successfully",
 		zap.String("user_id", user.Id),
 		zap.String("user_name", user.Name),
 		zap.String("asset_network", asset),

@@ -14,7 +14,7 @@ import (
 // processWithdrawal processes a withdrawal transaction
 func (d *SendReceiveListener) processWithdrawal(ctx context.Context, tx models.PrimeTransaction, wallet models.WalletInfo) error {
 	if tx.Status != "TRANSACTION_DONE" {
-		d.logger.Debug("Skipping non-completed withdrawal - waiting for completion",
+		zap.L().Debug("Skipping non-completed withdrawal - waiting for completion",
 			zap.String("transaction_id", tx.Id),
 			zap.String("status", tx.Status),
 			zap.String("symbol", tx.Symbol),
@@ -33,7 +33,7 @@ func (d *SendReceiveListener) processWithdrawal(ctx context.Context, tx models.P
 	}
 
 	if amount.LessThanOrEqual(decimal.Zero) {
-		d.logger.Debug("Skipping zero amount withdrawal",
+		zap.L().Debug("Skipping zero amount withdrawal",
 			zap.String("transaction_id", tx.Id),
 			zap.String("amount", amount.String()))
 		return nil
@@ -42,7 +42,7 @@ func (d *SendReceiveListener) processWithdrawal(ctx context.Context, tx models.P
 	// Find user by matching idempotency key prefix with user Id
 	userId, err := d.findUserByIdempotencyKeyPrefix(ctx, tx.IdempotencyKey)
 	if err != nil {
-		d.logger.Debug("Could not match withdrawal to user via idempotency key",
+		zap.L().Debug("Could not match withdrawal to user via idempotency key",
 			zap.String("transaction_id", tx.Id),
 			zap.String("idempotency_key", tx.IdempotencyKey),
 			zap.Error(err))
@@ -50,8 +50,9 @@ func (d *SendReceiveListener) processWithdrawal(ctx context.Context, tx models.P
 	}
 
 	assetNetwork := fmt.Sprintf("%s-%s", tx.Symbol, tx.Network)
+	assetNetwork = strings.TrimSuffix(assetNetwork, "-")
 
-	d.logger.Info("Processing completed withdrawal",
+	zap.L().Info("Processing completed withdrawal",
 		zap.String("transaction_id", tx.Id),
 		zap.String("user_id", userId),
 		zap.String("idempotency_key", tx.IdempotencyKey),
@@ -65,7 +66,7 @@ func (d *SendReceiveListener) processWithdrawal(ctx context.Context, tx models.P
 	result, err := d.apiService.ProcessWithdrawal(ctx, userId, assetNetwork, amount, tx.Id)
 	if err != nil {
 		if strings.Contains(err.Error(), "duplicate transaction") {
-			d.logger.Info("Duplicate withdrawal detected - already processed, marking as handled",
+			zap.L().Info("Duplicate withdrawal detected - already processed, marking as handled",
 				zap.String("transaction_id", tx.Id))
 			d.markTransactionProcessed(tx.Id)
 			return nil
@@ -75,12 +76,12 @@ func (d *SendReceiveListener) processWithdrawal(ctx context.Context, tx models.P
 
 	if !result.Success {
 		if strings.Contains(result.Error, "duplicate transaction") {
-			d.logger.Info("Duplicate withdrawal detected - already processed, marking as handled",
+			zap.L().Info("Duplicate withdrawal detected - already processed, marking as handled",
 				zap.String("transaction_id", tx.Id))
 			d.markTransactionProcessed(tx.Id)
 			return nil
 		}
-		d.logger.Warn("Withdrawal processing failed",
+		zap.L().Warn("Withdrawal processing failed",
 			zap.String("transaction_id", tx.Id),
 			zap.String("error", result.Error))
 		return fmt.Errorf("withdrawal processing failed: %s", result.Error)
@@ -88,7 +89,7 @@ func (d *SendReceiveListener) processWithdrawal(ctx context.Context, tx models.P
 
 	d.markTransactionProcessed(tx.Id)
 
-	d.logger.Info("Withdrawal processed successfully - balance debited",
+	zap.L().Info("Withdrawal processed successfully - balance debited",
 		zap.String("transaction_id", tx.Id),
 		zap.String("user_id", result.UserId),
 		zap.String("asset", result.Asset),

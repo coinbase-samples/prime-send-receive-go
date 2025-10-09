@@ -12,7 +12,7 @@ import (
 )
 
 func (s *Service) StoreAddress(ctx context.Context, userId string, asset, network, address, walletId, accountIdentifier string) (*models.Address, error) {
-	s.logger.Info("Storing address",
+	zap.L().Info("Storing address",
 		zap.String("user_id", userId),
 		zap.String("asset", asset),
 		zap.String("network", network),
@@ -26,26 +26,26 @@ func (s *Service) StoreAddress(ctx context.Context, userId string, asset, networ
 		&addr.Id, &addr.UserId, &addr.Asset, &addr.Network, &addr.Address, &addr.WalletId, &addr.AccountIdentifier, &addr.CreatedAt,
 	)
 	if err != nil {
-		s.logger.Error("Failed to insert address",
+		zap.L().Error("Failed to insert address",
 			zap.String("user_id", userId),
 			zap.String("asset", asset),
 			zap.Error(err))
 		return nil, fmt.Errorf("unable to insert address: %v", err)
 	}
 
-	s.logger.Info("Address stored successfully", zap.String("id", addressId))
+	zap.L().Info("Address stored successfully", zap.String("id", addressId))
 	return addr, nil
 }
 
 func (s *Service) GetAddresses(ctx context.Context, userId string, asset string, network string) ([]models.Address, error) {
-	s.logger.Debug("Querying addresses",
+	zap.L().Debug("Querying addresses",
 		zap.String("user_id", userId),
 		zap.String("asset", asset),
 		zap.String("network", network))
 
 	rows, err := s.db.QueryContext(ctx, queryGetUserAddresses, userId, asset, network)
 	if err != nil {
-		s.logger.Error("Failed to query addresses",
+		zap.L().Error("Failed to query addresses",
 			zap.String("user_id", userId),
 			zap.String("asset", asset),
 			zap.String("network", network),
@@ -54,7 +54,7 @@ func (s *Service) GetAddresses(ctx context.Context, userId string, asset string,
 	}
 	defer func(rows *sql.Rows) {
 		if err := rows.Close(); err != nil {
-			s.logger.Warn("Failed to close rows", zap.Error(err))
+			zap.L().Warn("Failed to close rows", zap.Error(err))
 		}
 	}(rows)
 
@@ -63,7 +63,7 @@ func (s *Service) GetAddresses(ctx context.Context, userId string, asset string,
 		var addr models.Address
 		err := rows.Scan(&addr.Id, &addr.UserId, &addr.Asset, &addr.Network, &addr.Address, &addr.WalletId, &addr.AccountIdentifier, &addr.CreatedAt)
 		if err != nil {
-			s.logger.Error("Failed to scan address row", zap.Error(err))
+			zap.L().Error("Failed to scan address row", zap.Error(err))
 			return nil, fmt.Errorf("unable to scan address row: %v", err)
 		}
 		addresses = append(addresses, addr)
@@ -71,11 +71,11 @@ func (s *Service) GetAddresses(ctx context.Context, userId string, asset string,
 
 	// Check for errors during iteration
 	if err := rows.Err(); err != nil {
-		s.logger.Error("Error during address row iteration", zap.Error(err))
+		zap.L().Error("Error during address row iteration", zap.Error(err))
 		return nil, fmt.Errorf("error iterating address rows: %v", err)
 	}
 
-	s.logger.Debug("Retrieved addresses",
+	zap.L().Debug("Retrieved addresses",
 		zap.String("user_id", userId),
 		zap.String("asset", asset),
 		zap.String("network", network),
@@ -84,18 +84,18 @@ func (s *Service) GetAddresses(ctx context.Context, userId string, asset string,
 }
 
 func (s *Service) GetAllUserAddresses(ctx context.Context, userId string) ([]models.Address, error) {
-	s.logger.Debug("Querying all addresses for user", zap.String("user_id", userId))
+	zap.L().Debug("Querying all addresses for user", zap.String("user_id", userId))
 
 	rows, err := s.db.QueryContext(ctx, queryGetAllUserAddresses, userId)
 	if err != nil {
-		s.logger.Error("Failed to query all addresses",
+		zap.L().Error("Failed to query all addresses",
 			zap.String("user_id", userId),
 			zap.Error(err))
 		return nil, fmt.Errorf("unable to query all addresses: %v", err)
 	}
 	defer func(rows *sql.Rows) {
 		if err := rows.Close(); err != nil {
-			s.logger.Warn("Failed to close rows", zap.Error(err))
+			zap.L().Warn("Failed to close rows", zap.Error(err))
 		}
 	}(rows)
 
@@ -104,7 +104,7 @@ func (s *Service) GetAllUserAddresses(ctx context.Context, userId string) ([]mod
 		var addr models.Address
 		err := rows.Scan(&addr.Id, &addr.UserId, &addr.Asset, &addr.Network, &addr.Address, &addr.WalletId, &addr.AccountIdentifier, &addr.CreatedAt)
 		if err != nil {
-			s.logger.Error("Failed to scan address row", zap.Error(err))
+			zap.L().Error("Failed to scan address row", zap.Error(err))
 			return nil, fmt.Errorf("unable to scan address row: %v", err)
 		}
 		addresses = append(addresses, addr)
@@ -112,18 +112,18 @@ func (s *Service) GetAllUserAddresses(ctx context.Context, userId string) ([]mod
 
 	// Check for errors during iteration
 	if err := rows.Err(); err != nil {
-		s.logger.Error("Error during address row iteration", zap.Error(err))
+		zap.L().Error("Error during address row iteration", zap.Error(err))
 		return nil, fmt.Errorf("error iterating address rows: %v", err)
 	}
 
-	s.logger.Debug("Retrieved all addresses",
+	zap.L().Debug("Retrieved all addresses",
 		zap.String("user_id", userId),
 		zap.Int("count", len(addresses)))
 	return addresses, nil
 }
 
 func (s *Service) FindUserByAddress(ctx context.Context, address string) (*models.User, *models.Address, error) {
-	s.logger.Debug("Finding user by address", zap.String("address", address))
+	zap.L().Debug("Finding user by address", zap.String("address", address))
 
 	var user models.User
 	var addr models.Address
@@ -133,16 +133,16 @@ func (s *Service) FindUserByAddress(ctx context.Context, address string) (*model
 	)
 
 	if err == sql.ErrNoRows {
-		s.logger.Debug("No user found for address", zap.String("address", address))
+		zap.L().Debug("No user found for address", zap.String("address", address))
 		return nil, nil, nil
 	}
 
 	if err != nil {
-		s.logger.Error("Failed to query user by address", zap.String("address", address), zap.Error(err))
+		zap.L().Error("Failed to query user by address", zap.String("address", address), zap.Error(err))
 		return nil, nil, fmt.Errorf("unable to query user by address: %v", err)
 	}
 
-	s.logger.Debug("Found user by address",
+	zap.L().Debug("Found user by address",
 		zap.String("address", address),
 		zap.String("user_id", user.Id),
 		zap.String("user_name", user.Name))

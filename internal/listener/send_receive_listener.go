@@ -12,7 +12,7 @@ import (
 
 // Start begins the deposit monitoring process
 func (d *SendReceiveListener) Start(ctx context.Context, assetsFile string) error {
-	d.logger.Info("Starting deposit listener")
+	zap.L().Info("Starting deposit listener")
 
 	// Load monitored wallets
 	if err := d.LoadMonitoredWallets(ctx, assetsFile); err != nil {
@@ -20,20 +20,20 @@ func (d *SendReceiveListener) Start(ctx context.Context, assetsFile string) erro
 	}
 
 	if len(d.monitoredWallets) == 0 {
-		d.logger.Warn("No wallets to monitor - make sure addresses have been created")
+		zap.L().Warn("No wallets to monitor - make sure addresses have been created")
 		return fmt.Errorf("no wallets to monitor")
 	}
 
 	// Perform startup recovery to catch any missed transactions
 	if err := d.performStartupRecovery(ctx); err != nil {
-		d.logger.Error("Startup recovery failed", zap.Error(err))
+		zap.L().Error("Startup recovery failed", zap.Error(err))
 		return fmt.Errorf("startup recovery failed: %v", err)
 	}
 
 	go d.pollLoop(ctx)
 	go d.cleanupLoop(ctx)
 
-	d.logger.Info("Deposit listener started successfully",
+	zap.L().Info("Deposit listener started successfully",
 		zap.Duration("polling_interval", d.pollingInterval),
 		zap.Duration("lookback_window", d.lookbackWindow))
 
@@ -42,10 +42,10 @@ func (d *SendReceiveListener) Start(ctx context.Context, assetsFile string) erro
 
 // Stop gracefully stops the deposit listener
 func (d *SendReceiveListener) Stop() {
-	d.logger.Info("Stopping deposit listener")
+	zap.L().Info("Stopping deposit listener")
 	close(d.stopChan)
 	<-d.doneChan
-	d.logger.Info("Deposit listener stopped")
+	zap.L().Info("Deposit listener stopped")
 }
 
 // pollLoop runs the main polling loop
@@ -71,13 +71,13 @@ func (d *SendReceiveListener) pollLoop(ctx context.Context) {
 
 // pollWallets polls all monitored wallets for new transactions
 func (d *SendReceiveListener) pollWallets(ctx context.Context) {
-	d.logger.Info("Starting wallet polling cycle",
+	zap.L().Info("Starting wallet polling cycle",
 		zap.Int("wallet_count", len(d.monitoredWallets)),
 		zap.Duration("lookback_window", d.lookbackWindow))
 
 	// Calculate time window for this poll
 	since := time.Now().UTC().Add(-d.lookbackWindow)
-	d.logger.Info("Polling for transactions since",
+	zap.L().Info("Polling for transactions since",
 		zap.Time("since", since))
 
 	var wg sync.WaitGroup
@@ -90,7 +90,7 @@ func (d *SendReceiveListener) pollWallets(ctx context.Context) {
 			defer wg.Done()
 
 			if err := d.pollWallet(ctx, w, since); err != nil {
-				d.logger.Error("Failed to poll wallet",
+				zap.L().Error("Failed to poll wallet",
 					zap.String("wallet_id", w.Id),
 					zap.String("asset_symbol", w.AssetSymbol),
 					zap.Error(err))
@@ -100,12 +100,12 @@ func (d *SendReceiveListener) pollWallets(ctx context.Context) {
 
 	wg.Wait()
 
-	d.logger.Info("Wallet polling cycle complete")
+	zap.L().Info("Wallet polling cycle complete")
 }
 
 // pollWallet polls a specific wallet for new transactions
 func (d *SendReceiveListener) pollWallet(ctx context.Context, wallet models.WalletInfo, since time.Time) error {
-	d.logger.Info("Polling wallet for transactions",
+	zap.L().Info("Polling wallet for transactions",
 		zap.String("wallet_id", wallet.Id),
 		zap.String("asset_symbol", wallet.AssetSymbol),
 		zap.Time("since", since))
@@ -116,7 +116,7 @@ func (d *SendReceiveListener) pollWallet(ctx context.Context, wallet models.Wall
 		return fmt.Errorf("failed to fetch wallet transactions: %v", err)
 	}
 
-	d.logger.Info("Fetched wallet transactions",
+	zap.L().Info("Fetched wallet transactions",
 		zap.String("wallet_id", wallet.Id),
 		zap.String("asset_symbol", wallet.AssetSymbol),
 		zap.Int("transaction_count", len(transactions)))
@@ -126,7 +126,7 @@ func (d *SendReceiveListener) pollWallet(ctx context.Context, wallet models.Wall
 			continue
 		}
 
-		d.logger.Info("Processing transaction",
+		zap.L().Info("Processing transaction",
 			zap.Int("tx_index", i+1),
 			zap.Int("total_txs", len(transactions)),
 			zap.String("transaction_id", tx.Id),
@@ -136,7 +136,7 @@ func (d *SendReceiveListener) pollWallet(ctx context.Context, wallet models.Wall
 			zap.String("amount", tx.Amount))
 
 		if err := d.processTransaction(ctx, tx, wallet); err != nil {
-			d.logger.Error("Failed to process transaction",
+			zap.L().Error("Failed to process transaction",
 				zap.String("transaction_id", tx.Id),
 				zap.String("wallet_id", wallet.Id),
 				zap.Error(err))
@@ -149,7 +149,7 @@ func (d *SendReceiveListener) pollWallet(ctx context.Context, wallet models.Wall
 // processTransaction processes a single Prime transaction (deposit or withdrawal)
 func (d *SendReceiveListener) processTransaction(ctx context.Context, tx models.PrimeTransaction, wallet models.WalletInfo) error {
 	if d.isTransactionProcessed(tx.Id) {
-		d.logger.Debug("Transaction already processed, skipping",
+		zap.L().Debug("Transaction already processed, skipping",
 			zap.String("transaction_id", tx.Id))
 		return nil
 	}
@@ -159,7 +159,7 @@ func (d *SendReceiveListener) processTransaction(ctx context.Context, tx models.
 	} else if tx.Type == "WITHDRAWAL" {
 		return d.processWithdrawal(ctx, tx, wallet)
 	} else {
-		d.logger.Debug("Skipping unsupported transaction type",
+		zap.L().Debug("Skipping unsupported transaction type",
 			zap.String("transaction_id", tx.Id),
 			zap.String("type", tx.Type))
 		return nil
@@ -168,7 +168,7 @@ func (d *SendReceiveListener) processTransaction(ctx context.Context, tx models.
 
 // performStartupRecovery checks for missed transactions during downtime
 func (d *SendReceiveListener) performStartupRecovery(ctx context.Context) error {
-	d.logger.Info("Starting startup recovery process")
+	zap.L().Info("Starting startup recovery process")
 
 	// Get the most recent transaction timestamp from our database
 	mostRecentTime, err := d.dbService.GetMostRecentTransactionTime(ctx)
@@ -179,7 +179,7 @@ func (d *SendReceiveListener) performStartupRecovery(ctx context.Context) error 
 	now := time.Now().UTC() // Ensure we work in UTC
 	recoveryStart := now.Add(-d.lookbackWindow)
 
-	d.logger.Info("Recovery window calculated",
+	zap.L().Info("Recovery window calculated",
 		zap.Time("most_recent_tx", mostRecentTime),
 		zap.Time("current_time", now),
 		zap.Time("recovery_start", recoveryStart),
@@ -191,7 +191,7 @@ func (d *SendReceiveListener) performStartupRecovery(ctx context.Context) error 
 	for _, wallet := range d.monitoredWallets {
 		recovered, err := d.recoverWalletTransactions(ctx, wallet, recoveryStart)
 		if err != nil {
-			d.logger.Error("Failed to recover transactions for wallet",
+			zap.L().Error("Failed to recover transactions for wallet",
 				zap.String("wallet_id", wallet.Id),
 				zap.String("asset_symbol", wallet.AssetSymbol),
 				zap.Error(err))
@@ -204,7 +204,7 @@ func (d *SendReceiveListener) performStartupRecovery(ctx context.Context) error 
 
 	// Log summary with warnings if some wallets failed
 	if len(failedWallets) > 0 {
-		d.logger.Warn("Startup recovery completed with some failures",
+		zap.L().Warn("Startup recovery completed with some failures",
 			zap.Int("total_transactions_recovered", totalRecovered),
 			zap.Int("total_wallets", len(d.monitoredWallets)),
 			zap.Int("failed_wallets", len(failedWallets)),
@@ -216,7 +216,7 @@ func (d *SendReceiveListener) performStartupRecovery(ctx context.Context) error 
 				len(failedWallets), len(d.monitoredWallets), failedWallets)
 		}
 	} else {
-		d.logger.Info("Startup recovery completed successfully",
+		zap.L().Info("Startup recovery completed successfully",
 			zap.Int("total_transactions_recovered", totalRecovered),
 			zap.Int("total_wallets", len(d.monitoredWallets)))
 	}
@@ -226,7 +226,7 @@ func (d *SendReceiveListener) performStartupRecovery(ctx context.Context) error 
 
 // recoverWalletTransactions recovers transactions for a specific wallet
 func (d *SendReceiveListener) recoverWalletTransactions(ctx context.Context, wallet models.WalletInfo, since time.Time) (int, error) {
-	d.logger.Debug("Recovering transactions for wallet",
+	zap.L().Debug("Recovering transactions for wallet",
 		zap.String("wallet_id", wallet.Id),
 		zap.String("asset_symbol", wallet.AssetSymbol),
 		zap.Time("since", since))
@@ -237,7 +237,7 @@ func (d *SendReceiveListener) recoverWalletTransactions(ctx context.Context, wal
 		return 0, fmt.Errorf("failed to fetch wallet transactions during recovery: %v", err)
 	}
 
-	d.logger.Debug("Fetched transactions for recovery",
+	zap.L().Debug("Fetched transactions for recovery",
 		zap.String("wallet_id", wallet.Id),
 		zap.String("asset_symbol", wallet.AssetSymbol),
 		zap.Int("transaction_count", len(transactions)))
@@ -247,13 +247,13 @@ func (d *SendReceiveListener) recoverWalletTransactions(ctx context.Context, wal
 		// Process transaction (duplicate prevention is handled in ProcessDepositV2)
 		if err := d.processTransaction(ctx, tx, wallet); err != nil {
 			// Log error but continue - the transaction might already exist
-			d.logger.Debug("Transaction processing during recovery",
+			zap.L().Debug("Transaction processing during recovery",
 				zap.String("transaction_id", tx.Id),
 				zap.String("wallet_id", wallet.Id),
 				zap.Error(err))
 		} else {
 			recovered++
-			d.logger.Info("Recovered transaction",
+			zap.L().Info("Recovered transaction",
 				zap.String("transaction_id", tx.Id),
 				zap.String("asset_symbol", tx.Symbol),
 				zap.String("network", tx.Network),

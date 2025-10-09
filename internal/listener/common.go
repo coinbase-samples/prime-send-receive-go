@@ -21,7 +21,6 @@ type SendReceiveListener struct {
 	primeService *prime.Service
 	apiService   *api.LedgerService
 	dbService    *database.Service
-	logger       *zap.Logger
 
 	// State management for processed transactions
 	processedTxIds  map[string]time.Time
@@ -44,7 +43,6 @@ func NewSendReceiveListener(
 	primeService *prime.Service,
 	apiService *api.LedgerService,
 	dbService *database.Service,
-	logger *zap.Logger,
 	portfolioId string,
 	lookbackWindow time.Duration,
 	pollingInterval time.Duration,
@@ -54,7 +52,6 @@ func NewSendReceiveListener(
 		primeService:    primeService,
 		apiService:      apiService,
 		dbService:       dbService,
-		logger:          logger,
 		processedTxIds:  make(map[string]time.Time),
 		lookbackWindow:  lookbackWindow,
 		pollingInterval: pollingInterval,
@@ -67,7 +64,7 @@ func NewSendReceiveListener(
 
 // LoadMonitoredWallets loads the list of trading wallets from the database
 func (d *SendReceiveListener) LoadMonitoredWallets(ctx context.Context, assetsFile string) error {
-	d.logger.Info("Loading monitored wallets from database")
+	zap.L().Info("Loading monitored wallets from database")
 
 	// Load asset configs from file to get unique asset symbols
 	assetConfigs, err := common.LoadAssetConfig(assetsFile)
@@ -75,7 +72,7 @@ func (d *SendReceiveListener) LoadMonitoredWallets(ctx context.Context, assetsFi
 		return fmt.Errorf("failed to load assets from YAML: %v", err)
 	}
 
-	d.logger.Info("Loaded assets from file",
+	zap.L().Info("Loaded assets from file",
 		zap.String("file", assetsFile),
 		zap.Int("count", len(assetConfigs)))
 
@@ -85,7 +82,7 @@ func (d *SendReceiveListener) LoadMonitoredWallets(ctx context.Context, assetsFi
 		assetSymbols[assetConfig.Symbol] = true
 	}
 
-	d.logger.Info("Unique assets to monitor",
+	zap.L().Info("Unique assets to monitor",
 		zap.Int("count", len(assetSymbols)))
 
 	// Query all users
@@ -103,7 +100,7 @@ func (d *SendReceiveListener) LoadMonitoredWallets(ctx context.Context, assetsFi
 			// Get all addresses for this user and asset (across all networks)
 			addresses, err := d.dbService.GetAllUserAddresses(ctx, user.Id)
 			if err != nil {
-				d.logger.Error("Failed to get addresses for user",
+				zap.L().Error("Failed to get addresses for user",
 					zap.String("user_id", user.Id),
 					zap.Error(err))
 				continue
@@ -126,7 +123,7 @@ func (d *SendReceiveListener) LoadMonitoredWallets(ctx context.Context, assetsFi
 		d.monitoredWallets = append(d.monitoredWallets, wallet)
 	}
 
-	d.logger.Info("Loaded monitored wallets",
+	zap.L().Info("Loaded monitored wallets",
 		zap.Int("count", len(d.monitoredWallets)),
 		zap.Any("wallets", d.monitoredWallets))
 
@@ -135,7 +132,7 @@ func (d *SendReceiveListener) LoadMonitoredWallets(ctx context.Context, assetsFi
 
 // fetchWalletTransactions calls Prime API to get wallet transactions
 func (d *SendReceiveListener) fetchWalletTransactions(ctx context.Context, walletId string, since time.Time) ([]models.PrimeTransaction, error) {
-	d.logger.Debug("Fetching wallet transactions from Prime API",
+	zap.L().Debug("Fetching wallet transactions from Prime API",
 		zap.String("wallet_id", walletId),
 		zap.Time("since", since))
 
@@ -179,7 +176,7 @@ func (d *SendReceiveListener) fetchWalletTransactions(ctx context.Context, walle
 		transactions = append(transactions, primeTransaction)
 	}
 
-	d.logger.Debug("Converted Prime transactions",
+	zap.L().Debug("Converted Prime transactions",
 		zap.String("wallet_id", walletId),
 		zap.Int("count", len(transactions)))
 
@@ -236,7 +233,7 @@ func (d *SendReceiveListener) cleanupProcessedTransactions() {
 	}
 
 	if cleaned > 0 {
-		d.logger.Debug("Cleaned up old processed transactions",
+		zap.L().Debug("Cleaned up old processed transactions",
 			zap.Int("cleaned", cleaned),
 			zap.Int("remaining", len(d.processedTxIds)))
 	}
@@ -265,7 +262,7 @@ func (d *SendReceiveListener) findUserByIdempotencyKeyPrefix(ctx context.Context
 	for _, user := range users {
 		userParts := strings.Split(user.Id, "-")
 		if len(userParts) > 0 && userParts[0] == idempotencyPrefix {
-			d.logger.Debug("Matched withdrawal to user by UUID prefix",
+			zap.L().Debug("Matched withdrawal to user by UUID prefix",
 				zap.String("user_id", user.Id),
 				zap.String("idempotency_key", idempotencyKey),
 				zap.String("matched_prefix", idempotencyPrefix))

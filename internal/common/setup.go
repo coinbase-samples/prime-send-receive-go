@@ -31,7 +31,6 @@ func init() {
 }
 
 type Services struct {
-	Logger           *zap.Logger
 	DbService        *database.Service
 	PrimeService     *prime.Service
 	DefaultPortfolio *models.Portfolio
@@ -42,6 +41,8 @@ func InitializeLogger() (*zap.Logger, func()) {
 	if err != nil {
 		log.Fatalf("Failed to initialize logger: %v", err)
 	}
+
+	zap.ReplaceGlobals(logger)
 
 	cleanup := func() {
 		if err := logger.Sync(); err != nil {
@@ -54,37 +55,36 @@ func InitializeLogger() (*zap.Logger, func()) {
 	return logger, cleanup
 }
 
-func InitializeServices(ctx context.Context, logger *zap.Logger, cfg *models.Config) (*Services, error) {
-	dbService, err := database.NewService(ctx, logger, cfg.Database)
+func InitializeServices(ctx context.Context, cfg *models.Config) (*Services, error) {
+	dbService, err := database.NewService(ctx, cfg.Database)
 	if err != nil {
 		return nil, err
 	}
 
-	logger.Info("Loading Prime API credentials")
+	zap.L().Info("Loading Prime API credentials")
 	creds, err := loadPrimeCredentials()
 	if err != nil {
 		dbService.Close()
 		return nil, err
 	}
 
-	primeService, err := prime.NewService(creds, logger)
+	primeService, err := prime.NewService(creds)
 	if err != nil {
 		dbService.Close()
 		return nil, err
 	}
 
-	logger.Info("Finding default portfolio")
+	zap.L().Info("Finding default portfolio")
 	defaultPortfolio, err := primeService.FindDefaultPortfolio(ctx)
 	if err != nil {
 		dbService.Close()
 		return nil, err
 	}
-	logger.Info("Using default portfolio",
+	zap.L().Info("Using default portfolio",
 		zap.String("name", defaultPortfolio.Name),
 		zap.String("id", defaultPortfolio.Id))
 
 	return &Services{
-		Logger:           logger,
 		DbService:        dbService,
 		PrimeService:     primeService,
 		DefaultPortfolio: defaultPortfolio,
@@ -93,8 +93,8 @@ func InitializeServices(ctx context.Context, logger *zap.Logger, cfg *models.Con
 
 // InitializeDatabaseOnly initializes just the database service without Prime API
 // Useful for read-only operations like querying balances
-func InitializeDatabaseOnly(ctx context.Context, logger *zap.Logger, cfg *models.Config) (*database.Service, error) {
-	dbService, err := database.NewService(ctx, logger, cfg.Database)
+func InitializeDatabaseOnly(ctx context.Context, cfg *models.Config) (*database.Service, error) {
+	dbService, err := database.NewService(ctx, cfg.Database)
 	if err != nil {
 		return nil, err
 	}

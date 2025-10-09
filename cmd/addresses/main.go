@@ -31,7 +31,7 @@ func main() {
 
 	// Initialize database service (no need for Prime API for read-only operations)
 	logger.Info("Connecting to database", zap.String("path", cfg.Database.Path))
-	dbService, err := common.InitializeDatabaseOnly(ctx, logger, cfg)
+	dbService, err := common.InitializeDatabaseOnly(ctx, cfg)
 	if err != nil {
 		logger.Fatal("Failed to initialize database", zap.Error(err))
 	}

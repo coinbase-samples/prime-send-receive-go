@@ -16,7 +16,7 @@ import (
 func (s *SubledgerService) ProcessTransaction(ctx context.Context, userId, asset, transactionType string,
 	amount decimal.Decimal, externalTxId, address, reference string) (*models.Transaction, error) {
 
-	s.logger.Info("Processing transaction",
+	zap.L().Info("Processing transaction",
 		zap.String("user_id", userId),
 		zap.String("asset_network", asset),
 		zap.String("type", transactionType),
@@ -28,7 +28,7 @@ func (s *SubledgerService) ProcessTransaction(ctx context.Context, userId, asset
 		var existingTxId string
 		err := s.db.QueryRowContext(ctx, queryCheckDuplicateTransaction, externalTxId).Scan(&existingTxId)
 		if err == nil {
-			s.logger.Warn("Duplicate external transaction Id detected, skipping",
+			zap.L().Warn("Duplicate external transaction Id detected, skipping",
 				zap.String("external_tx_id", externalTxId),
 				zap.String("existing_internal_tx_id", existingTxId))
 			return nil, fmt.Errorf("duplicate transaction: external_transaction_id %s already exists", externalTxId)
@@ -129,7 +129,7 @@ func (s *SubledgerService) ProcessTransaction(ctx context.Context, userId, asset
 		return nil, fmt.Errorf("failed to commit transaction: %v", err)
 	}
 
-	s.logger.Info("Transaction processed successfully",
+	zap.L().Info("Transaction processed successfully",
 		zap.String("transaction_id", transactionId),
 		zap.String("user_id", userId),
 		zap.String("asset_network", asset),
@@ -201,7 +201,7 @@ func (s *SubledgerService) addJournalEntries(ctx context.Context, tx *sql.Tx, tr
 
 // GetTransactionHistory returns paginated transaction history for a user
 func (s *SubledgerService) GetTransactionHistory(ctx context.Context, userId, asset string, limit, offset int) ([]models.Transaction, error) {
-	s.logger.Debug("Getting transaction history",
+	zap.L().Debug("Getting transaction history",
 		zap.String("user_id", userId),
 		zap.String("asset_network", asset),
 		zap.Int("limit", limit),
@@ -213,7 +213,7 @@ func (s *SubledgerService) GetTransactionHistory(ctx context.Context, userId, as
 	}
 	defer func(rows *sql.Rows) {
 		if err := rows.Close(); err != nil {
-			s.logger.Warn("Failed to close rows", zap.Error(err))
+			zap.L().Warn("Failed to close rows", zap.Error(err))
 		}
 	}(rows)
 
@@ -249,7 +249,7 @@ func (s *SubledgerService) GetTransactionHistory(ctx context.Context, userId, as
 
 	// Check for errors during iteration
 	if err := rows.Err(); err != nil {
-		s.logger.Error("Error during transaction row iteration", zap.Error(err))
+		zap.L().Error("Error during transaction row iteration", zap.Error(err))
 		return nil, fmt.Errorf("error iterating transaction rows: %v", err)
 	}
 
