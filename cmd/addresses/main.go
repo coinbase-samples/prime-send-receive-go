@@ -123,9 +123,10 @@ func main() {
 			symbol := common.BoxPrefix(isLast)
 
 			// Format: Asset-Network (e.g., "ETH-ethereum-mainnet")
+			assetNetwork := fmt.Sprintf("%s-%s", addr.Asset, addr.Network)
 			fmt.Printf("%s %-30s → %s\n",
 				symbol,
-				addr.Asset,
+				assetNetwork,
 				addr.Address)
 
 			// Add extra details on next line if account identifier differs

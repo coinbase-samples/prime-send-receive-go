@@ -65,14 +65,16 @@ func (d *SendReceiveListener) processDeposit(ctx context.Context, tx models.Prim
 		zap.String("lookup_address", lookupAddress),
 		zap.String("deposit_address", tx.TransferTo.Address),
 		zap.String("account_identifier", tx.TransferTo.AccountIdentifier),
-		zap.String("asset_symbol", tx.Symbol),
-		zap.String("network", tx.Network),
+		zap.String("prime_api_symbol", tx.Symbol),
+		zap.String("prime_api_network", tx.Network),
 		zap.String("asset_network", assetNetwork),
 		zap.String("amount", amount.String()),
 		zap.Time("created_at", tx.CreatedAt),
 		zap.Time("completed_at", tx.CompletedAt))
 
-	result, err := d.apiService.ProcessDeposit(ctx, lookupAddress, assetNetwork, amount, tx.Id)
+	// Pass Prime API symbol to ledger - ProcessDeposit will use canonical symbol from address lookup
+	// This handles cases where Prime API returns "BASEUSDC" but we store as "USDC" with network="base-mainnet"
+	result, err := d.apiService.ProcessDeposit(ctx, lookupAddress, tx.Symbol, amount, tx.Id)
 	if err != nil {
 		if strings.Contains(err.Error(), "duplicate transaction") {
 			zap.L().Info("Duplicate transaction detected - already processed, marking as handled",

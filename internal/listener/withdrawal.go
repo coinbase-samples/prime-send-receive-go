@@ -63,7 +63,8 @@ func (d *SendReceiveListener) processWithdrawal(ctx context.Context, tx models.P
 		zap.Time("created_at", tx.CreatedAt),
 		zap.Time("completed_at", tx.CompletedAt))
 
-	result, err := d.apiService.ProcessWithdrawal(ctx, userId, assetNetwork, amount, tx.Id)
+	// Pass symbol only to ledger - balances are tracked per symbol, not per network
+	result, err := d.apiService.ProcessWithdrawal(ctx, userId, tx.Symbol, amount, tx.Id)
 	if err != nil {
 		if strings.Contains(err.Error(), "duplicate transaction") {
 			zap.L().Info("Duplicate withdrawal detected - already processed, marking as handled",

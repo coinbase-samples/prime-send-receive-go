@@ -75,12 +75,23 @@ func main() {
 		zap.String("user_name", targetUser.Name),
 		zap.String("user_email", targetUser.Email))
 
-	// Step 2: Check current balance
+	// Step 2: Parse asset flag to extract symbol for balance check
+	// Format: SYMBOL-network-type (e.g., ETH-ethereum-mainnet)
+	assetParts := strings.SplitN(*assetFlag, "-", 2)
+	if len(assetParts) != 2 {
+		zap.L().Fatal("Invalid asset format. Expected format: SYMBOL-network-type (e.g., ETH-ethereum-mainnet)",
+			zap.String("asset", *assetFlag))
+	}
+	symbol := assetParts[0]
+	network := assetParts[1]
+
+	// Check current balance (using symbol only - balances are per symbol, not per network)
 	zap.L().Info("Checking user balance",
 		zap.String("user_id", targetUser.Id),
-		zap.String("asset", *assetFlag))
+		zap.String("asset", *assetFlag),
+		zap.String("symbol", symbol))
 
-	currentBalance, err := services.DbService.GetUserBalance(ctx, targetUser.Id, *assetFlag)
+	currentBalance, err := services.DbService.GetUserBalance(ctx, targetUser.Id, symbol)
 	if err != nil {
 		zap.L().Fatal("Failed to get user balance",
 			zap.String("user_id", targetUser.Id),
@@ -123,15 +134,6 @@ func main() {
 	fmt.Println()
 
 	// Step 4: Get wallet ID from address database
-	// Parse asset flag (format: SYMBOL-network-type, e.g., ETH-ethereum-mainnet)
-	assetParts := strings.SplitN(*assetFlag, "-", 2)
-	if len(assetParts) != 2 {
-		zap.L().Fatal("Invalid asset format. Expected format: SYMBOL-network-type (e.g., ETH-ethereum-mainnet)",
-			zap.String("asset", *assetFlag))
-	}
-	symbol := assetParts[0]
-	network := assetParts[1]
-
 	zap.L().Info("Looking up wallet ID for asset",
 		zap.String("asset", symbol),
 		zap.String("network", network))

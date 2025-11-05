@@ -244,6 +244,13 @@ func (d *SendReceiveListener) recoverWalletTransactions(ctx context.Context, wal
 
 	var recovered int
 	for _, tx := range transactions {
+		// Skip if already processed
+		if d.isTransactionProcessed(tx.Id) {
+			zap.L().Debug("Transaction already processed during recovery, skipping",
+				zap.String("transaction_id", tx.Id))
+			continue
+		}
+
 		// Process transaction (duplicate prevention is handled in ProcessDepositV2)
 		if err := d.processTransaction(ctx, tx, wallet); err != nil {
 			// Log error but continue - the transaction might already exist

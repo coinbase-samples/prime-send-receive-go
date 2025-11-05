@@ -18,7 +18,7 @@ func (s *LedgerService) ProcessWithdrawal(ctx context.Context, userId, asset str
 		}, nil
 	}
 
-	zap.L().Info("Processing real withdrawal from Prime API",
+	zap.L().Info("Processing withdrawal from Prime API",
 		zap.String("user_id", userId),
 		zap.String("asset_network", asset),
 		zap.String("amount", amount.String()),
@@ -86,7 +86,7 @@ func (s *LedgerService) ProcessWithdrawal(ctx context.Context, userId, asset str
 		}, nil
 	}
 
-	zap.L().Info("Real withdrawal processed successfully",
+	zap.L().Info("Withdrawal processed successfully",
 		zap.String("user_id", user.Id),
 		zap.String("user_name", user.Name),
 		zap.String("asset_network", asset),

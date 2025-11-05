@@ -168,16 +168,19 @@ func (s *Service) ProcessDeposit(ctx context.Context, address, asset string, amo
 		return fmt.Errorf("no user found for address: %s", address)
 	}
 
-	// Verify asset matches
-	if addr.Asset != asset {
-		zap.L().Warn("Asset mismatch for deposit",
+	// Use canonical symbol from address table (not Prime API's symbol which varies by network)
+	// e.g., Prime API returns "BASEUSDC" but we store as symbol="USDC", network="base-mainnet"
+	canonicalSymbol := addr.Asset
+
+	if canonicalSymbol != asset {
+		zap.L().Info("Using canonical symbol from address table",
 			zap.String("address", address),
-			zap.String("expected_asset", addr.Asset),
-			zap.String("received_asset", asset))
-		return fmt.Errorf("asset mismatch: expected %s, received %s", addr.Asset, asset)
+			zap.String("prime_api_symbol", asset),
+			zap.String("canonical_symbol", canonicalSymbol),
+			zap.String("network", addr.Network))
 	}
 
-	_, err = s.subledger.ProcessTransaction(ctx, user.Id, asset, "deposit", amount, transactionId, address, "")
+	_, err = s.subledger.ProcessTransaction(ctx, user.Id, canonicalSymbol, "deposit", amount, transactionId, address, "")
 	if err != nil {
 		return fmt.Errorf("error processing deposit transaction: %v", err)
 	}
@@ -185,7 +188,8 @@ func (s *Service) ProcessDeposit(ctx context.Context, address, asset string, amo
 	zap.L().Info("Deposit processed successfully",
 		zap.String("user_id", user.Id),
 		zap.String("user_name", user.Name),
-		zap.String("asset_network", asset),
+		zap.String("canonical_symbol", canonicalSymbol),
+		zap.String("network", addr.Network),
 		zap.String("amount", amount.String()))
 
 	return nil

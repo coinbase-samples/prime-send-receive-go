@@ -44,7 +44,7 @@ const (
 		       a.id, a.user_id, a.asset, a.network, a.address, a.wallet_id, a.account_identifier, a.created_at
 		FROM users u
 		JOIN addresses a ON u.id = a.user_id
-		WHERE a.address = ? AND u.active = 1`
+		WHERE LOWER(a.address) = LOWER(?) AND u.active = 1`
 
 	// Balance queries
 	queryGetBalance = `

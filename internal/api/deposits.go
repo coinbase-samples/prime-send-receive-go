@@ -13,7 +13,7 @@ import (
 
 // ProcessDeposit handles incoming deposit notifications from Prime API
 func (s *LedgerService) ProcessDeposit(ctx context.Context, address, asset string, amount decimal.Decimal, externalTxId string) (*models.DepositResult, error) {
-	zap.L().Info("Processing real deposit from Prime API",
+	zap.L().Info("Processing deposit from Prime API",
 		zap.String("address", address),
 		zap.String("asset_network", asset),
 		zap.String("amount", amount.String()),
@@ -78,7 +78,7 @@ func (s *LedgerService) ProcessDeposit(ctx context.Context, address, asset strin
 		newBalance = decimal.Zero
 	}
 
-	zap.L().Info("Real deposit processed successfully",
+	zap.L().Info("Deposit processed successfully",
 		zap.String("user_id", user.Id),
 		zap.String("user_name", user.Name),
 		zap.String("asset_network", asset),
