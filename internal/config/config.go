@@ -42,12 +42,13 @@ func Load() (*models.Config, error) {
 
 	return &models.Config{
 		Database: models.DatabaseConfig{
-			Path:            getEnvString("DATABASE_PATH", "addresses.db"),
-			MaxOpenConns:    getEnvInt("DB_MAX_OPEN_CONNS", 25),
-			MaxIdleConns:    getEnvInt("DB_MAX_IDLE_CONNS", 5),
-			ConnMaxLifetime: connMaxLifetime,
-			ConnMaxIdleTime: connMaxIdleTime,
-			PingTimeout:     pingTimeout,
+			Path:             getEnvString("DATABASE_PATH", "addresses.db"),
+			MaxOpenConns:     getEnvInt("DB_MAX_OPEN_CONNS", 25),
+			MaxIdleConns:     getEnvInt("DB_MAX_IDLE_CONNS", 5),
+			ConnMaxLifetime:  connMaxLifetime,
+			ConnMaxIdleTime:  connMaxIdleTime,
+			PingTimeout:      pingTimeout,
+			CreateDummyUsers: getEnvBool("CREATE_DUMMY_USERS", false),
 		},
 		Listener: models.ListenerConfig{
 			LookbackWindow:  lookbackWindow,
@@ -80,6 +81,15 @@ func getEnvInt(key string, defaultValue int) int {
 	if value := os.Getenv(key); value != "" {
 		if intValue, err := strconv.Atoi(value); err == nil {
 			return intValue
+		}
+	}
+	return defaultValue
+}
+
+func getEnvBool(key string, defaultValue bool) bool {
+	if value := os.Getenv(key); value != "" {
+		if boolValue, err := strconv.ParseBool(value); err == nil {
+			return boolValue
 		}
 	}
 	return defaultValue

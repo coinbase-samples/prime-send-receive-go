@@ -6,7 +6,7 @@ This is a sample application; test thoroughly and verify it meets your requireme
 
 ## Overview
 
-This system processes crypto deposits and withdrawals by monitoring Prime API transactions and maintaining user balances in a high-performance subledger.
+This system processes crypto deposits and withdrawals by monitoring Prime API transactions and maintaining user balances in a subledger.
 
 **Core Features:**
 - Deposit and withdrawal detection from Prime API
@@ -43,6 +43,7 @@ DB_MAX_IDLE_CONNS=5
 DB_CONN_MAX_LIFETIME=5m
 DB_CONN_MAX_IDLE_TIME=30s
 DB_PING_TIMEOUT=5s
+CREATE_DUMMY_USERS=false           # Set to true to create 3 dummy test users on first run
 
 # Listener configuration
 LISTENER_LOOKBACK_WINDOW=6h        # How far back to check for missed transactions
@@ -74,7 +75,16 @@ assets:
 
 ### 3. User Configuration
 
-The system creates three dummy users on first run: Alice Johnson, Bob Smith, and Carol Williams. To add your own users, edit `internal/database/service.go` in the `initSchema()` function or insert users directly into the SQLite database after initialization.
+By default, the system does not create any users. You can enable dummy user creation for testing by setting `CREATE_DUMMY_USERS=true` in your `.env` file, which will create three test users on first run: Alice Johnson, Bob Smith, and Carol Williams.
+
+To add your own users for production use, insert them directly into the SQLite database:
+
+```sql
+INSERT INTO users (id, name, email) VALUES
+  ('your-uuid-here', 'Your Name', 'your.email@example.com');
+```
+
+Or create a script to add users programmatically using the database service.
 
 ### 4. Initial Setup
 

@@ -10,12 +10,13 @@ type Config struct {
 
 // DatabaseConfig holds database connection settings
 type DatabaseConfig struct {
-	Path            string
-	MaxOpenConns    int
-	MaxIdleConns    int
-	ConnMaxLifetime time.Duration
-	ConnMaxIdleTime time.Duration
-	PingTimeout     time.Duration
+	Path             string
+	MaxOpenConns     int
+	MaxIdleConns     int
+	ConnMaxLifetime  time.Duration
+	ConnMaxIdleTime  time.Duration
+	PingTimeout      time.Duration
+	CreateDummyUsers bool
 }
 
 // ListenerConfig holds transaction listener settings

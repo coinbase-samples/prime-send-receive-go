@@ -45,7 +45,7 @@ func NewService(ctx context.Context, cfg models.DatabaseConfig) (*Service, error
 
 	subledger := NewSubledgerService(db)
 	service := &Service{db: db, subledger: subledger}
-	if err := service.initSchema(); err != nil {
+	if err := service.initSchema(cfg.CreateDummyUsers); err != nil {
 		err := db.Close()
 		if err != nil {
 			return nil, err
@@ -73,7 +73,7 @@ func (s *Service) Close() {
 	}
 }
 
-func (s *Service) initSchema() error {
+func (s *Service) initSchema(createDummyUsers bool) error {
 	schema := `
 	-- Create users table
 	CREATE TABLE IF NOT EXISTS users (
@@ -119,24 +119,28 @@ func (s *Service) initSchema() error {
 		return err
 	}
 
-	// Insert 3 dummy users for testing with real deposits
-	users := []struct {
-		id    string
-		name  string
-		email string
-	}{
-		{uuid.New().String(), "Alice Johnson", "alice.johnson@example.com"},
-		{uuid.New().String(), "Bob Smith", "bob.smith@example.com"},
-		{uuid.New().String(), "Carol Williams", "carol.williams@example.com"},
-	}
-
-	for _, user := range users {
-		_, err := s.db.Exec(queryInsertUser, user.id, user.name, user.email)
-		if err != nil {
-			zap.L().Error("Failed to insert user", zap.String("name", user.name), zap.Error(err))
-		} else {
-			zap.L().Debug("User created", zap.String("id", user.id), zap.String("name", user.name))
+	// Insert 3 dummy users for testing if configured to do so
+	if createDummyUsers {
+		users := []struct {
+			id    string
+			name  string
+			email string
+		}{
+			{uuid.New().String(), "Alice Johnson", "alice.johnson@example.com"},
+			{uuid.New().String(), "Bob Smith", "bob.smith@example.com"},
+			{uuid.New().String(), "Carol Williams", "carol.williams@example.com"},
 		}
+
+		for _, user := range users {
+			_, err := s.db.Exec(queryInsertUser, user.id, user.name, user.email)
+			if err != nil {
+				zap.L().Error("Failed to insert dummy user", zap.String("name", user.name), zap.Error(err))
+			} else {
+				zap.L().Info("Dummy user created", zap.String("id", user.id), zap.String("name", user.name))
+			}
+		}
+	} else {
+		zap.L().Info("Skipping dummy user creation (CREATE_DUMMY_USERS=false)")
 	}
 
 	return nil
