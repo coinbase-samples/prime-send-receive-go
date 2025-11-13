@@ -240,3 +240,28 @@ func (s *Service) ReconcileUserBalance(ctx context.Context, userId, asset string
 func (s *Service) GetMostRecentTransactionTime(ctx context.Context) (time.Time, error) {
 	return s.subledger.GetMostRecentTransactionTime(ctx)
 }
+
+// ReverseWithdrawal credits back a withdrawal that failed (rollback)
+func (s *Service) ReverseWithdrawal(ctx context.Context, userId, asset string, amount decimal.Decimal, originalTxId string) error {
+	reversalTxId := originalTxId + "-reversal"
+
+	zap.L().Info("Reversing failed withdrawal",
+		zap.String("user_id", userId),
+		zap.String("asset", asset),
+		zap.String("amount", amount.String()),
+		zap.String("original_tx", originalTxId),
+		zap.String("reversal_tx", reversalTxId))
+
+	// Credit back the amount (deposit to reverse the withdrawal)
+	_, err := s.subledger.ProcessTransaction(ctx, userId, asset, "deposit", amount, reversalTxId, "", "Reversal of failed withdrawal")
+	if err != nil {
+		return fmt.Errorf("error reversing withdrawal: %v", err)
+	}
+
+	zap.L().Info("Withdrawal reversed successfully",
+		zap.String("user_id", userId),
+		zap.String("asset", asset),
+		zap.String("amount", amount.String()))
+
+	return nil
+}

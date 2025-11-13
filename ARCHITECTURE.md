@@ -87,20 +87,64 @@ sequenceDiagram
     DB-->>Withdrawal: Sufficient balance
     Withdrawal->>DB: Get wallet ID
     Withdrawal->>Withdrawal: Generate idempotency key<br/>{user_prefix}-{uuid}
-    Withdrawal->>Prime: Create withdrawal
-    Prime-->>Withdrawal: Withdrawal created
-    Withdrawal-->>User: Success (activity ID)
 
-    Note over Listener: Polling cycle (every 30s)
-    Listener->>Prime: List transactions
-    Prime-->>Listener: Return transactions
-    Listener->>Listener: Filter TRANSACTION_DONE
-    Listener->>Listener: Extract user ID from<br/>idempotency key prefix
-    Listener->>DB: Debit balance (withdrawal)
-    Listener->>DB: Record transaction
-    DB-->>Listener: Success
+    Note over Withdrawal,DB: Check for duplicate idempotency key (idempotent)
+    Withdrawal->>DB: Query transaction history
+    alt Idempotency key already used
+        DB-->>Withdrawal: Found existing withdrawal
+        Withdrawal-->>User: Return existing (idempotent)
+    else New withdrawal
+        DB-->>Withdrawal: Not found
 
-    Prime->>Blockchain: Broadcast withdrawal
+        Note over Withdrawal,DB: Debit BEFORE calling Prime (prevents race)
+        Withdrawal->>DB: Debit balance (with version check)
+        alt Concurrent modification detected
+            DB-->>Withdrawal: Error: version mismatch
+            Withdrawal-->>User: Retry (another withdrawal in progress)
+        else Debit successful
+            DB-->>Withdrawal: Balance debited
+
+            Withdrawal->>Prime: Create withdrawal
+            alt Prime API fails
+                Prime-->>Withdrawal: Error
+                Note over Withdrawal,DB: Rollback on failure
+                Withdrawal->>DB: Credit back (reversal)
+                DB-->>Withdrawal: Balance restored
+                Withdrawal-->>User: Failed (balance restored)
+            else Prime API succeeds
+                Prime-->>Withdrawal: Withdrawal created
+                Withdrawal-->>User: Success (activity ID)
+
+                Note over Listener: Polling cycle (every 30s)
+                Listener->>Prime: List transactions
+                Prime-->>Listener: Return transactions
+
+                alt Terminal failure status (CANCELLED/REJECTED/FAILED/EXPIRED)
+                    Listener->>Listener: Extract user ID from<br/>idempotency key {user_prefix}-{uuid}
+                    alt User ID found
+                        Note over Listener,DB: Credit back failed withdrawal
+                        Listener->>DB: Credit back amount (reversal)
+                        DB-->>Listener: Balance credited back
+                        Listener-->>User: (Balance restored)
+                    else Invalid idempotency pattern
+                        Listener->>Listener: Skip (not subledger withdrawal)
+                    end
+                else TRANSACTION_DONE (success)
+                    Listener->>Listener: Filter TRANSACTION_DONE
+                    Listener->>Listener: Extract user ID from<br/>idempotency key {user_prefix}-{uuid}
+                    alt User ID found
+                        Listener->>DB: Try debit with idempotency key
+                        DB-->>Listener: Duplicate detected (CLI already debited)
+                        Listener->>Listener: Skip (already processed)
+                    else Invalid idempotency pattern
+                        Listener->>Listener: Skip (not subledger withdrawal)
+                    end
+
+                    Prime->>Blockchain: Broadcast withdrawal
+                end
+            end
+        end
+    end
 ```
 
 ## Database Schema

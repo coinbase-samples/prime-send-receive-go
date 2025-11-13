@@ -168,8 +168,68 @@ func main() {
 		zap.String("user_id", targetUser.Id),
 		zap.String("idempotency_key", idempotencyKey))
 
-	// Step 5: Create withdrawal via Prime API
-	fmt.Println("🔄 Creating withdrawal via Prime API...")
+	// Step 5: Check if this idempotency key was already used (idempotent behavior like Prime API)
+	existingTxs, err := services.DbService.GetTransactionHistory(ctx, targetUser.Id, symbol, 1000, 0)
+	if err != nil {
+		zap.L().Fatal("Failed to check transaction history",
+			zap.String("user_id", targetUser.Id),
+			zap.String("asset", symbol),
+			zap.Error(err))
+	}
+
+	// Check if we already processed a withdrawal with this idempotency key
+	for _, tx := range existingTxs {
+		if tx.ExternalTransactionId == idempotencyKey && tx.TransactionType == "withdrawal" {
+			zap.L().Info("Idempotency key already used - returning existing withdrawal",
+				zap.String("idempotency_key", idempotencyKey),
+				zap.String("transaction_id", tx.Id),
+				zap.String("amount", tx.Amount.String()),
+				zap.Time("processed_at", tx.ProcessedAt))
+
+			fmt.Println("\n✅ Withdrawal already processed (idempotent)")
+			fmt.Printf("   Original transaction ID: %s\n", tx.Id)
+			fmt.Printf("   Amount: %s %s\n", tx.Amount.Neg().String(), symbol)
+			fmt.Printf("   Processed at: %s\n\n", tx.ProcessedAt.Format("2006-01-02 15:04:05"))
+
+			zap.L().Info("Returning existing withdrawal (idempotent)",
+				zap.String("idempotency_key", idempotencyKey),
+				zap.String("user_id", targetUser.Id),
+				zap.String("asset", symbol))
+			return
+		}
+	}
+
+	// Step 6: Debit balance locally before calling Prime API
+	fmt.Println("🔄 Reserving funds (debiting local balance)...")
+	zap.L().Info("Debiting balance before withdrawal",
+		zap.String("user_id", targetUser.Id),
+		zap.String("asset", symbol),
+		zap.String("amount", amount.String()),
+		zap.String("idempotency_key", idempotencyKey))
+
+	// Use idempotency key as transaction ID initially (prevents listener from double-debiting)
+	err = services.DbService.ProcessWithdrawal(ctx, targetUser.Id, symbol, amount, idempotencyKey)
+	if err != nil {
+		if strings.Contains(err.Error(), "concurrent modification") {
+			zap.L().Fatal("Balance was modified by another withdrawal - please retry",
+				zap.String("error", err.Error()))
+		}
+		if strings.Contains(err.Error(), "duplicate transaction") {
+			// Race condition: another request with same idem key processed between our check and debit
+			zap.L().Fatal("Withdrawal with this idempotency key is already being processed - please retry in a moment",
+				zap.String("idempotency_key", idempotencyKey))
+		}
+		zap.L().Fatal("Failed to debit balance",
+			zap.String("user_id", targetUser.Id),
+			zap.String("asset", symbol),
+			zap.Error(err))
+	}
+
+	fmt.Println("Funds reserved - balance debited locally")
+	fmt.Printf("   New balance: %s\n\n", currentBalance.Sub(amount).String())
+
+	// Step 7: Create withdrawal via Prime API
+	fmt.Println("Creating withdrawal via Prime API...")
 	zap.L().Info("Creating withdrawal",
 		zap.String("portfolio_id", services.DefaultPortfolio.Id),
 		zap.String("wallet_id", walletId),
@@ -186,7 +246,29 @@ func main() {
 		idempotencyKey,
 	)
 	if err != nil {
-		zap.L().Fatal("Failed to create withdrawal via Prime API", zap.Error(err))
+		// Prime API failed - rollback the local debit by crediting back
+		zap.L().Error("Prime API withdrawal failed - rolling back local debit",
+			zap.String("user_id", targetUser.Id),
+			zap.String("asset", symbol),
+			zap.String("amount", amount.String()),
+			zap.Error(err))
+
+		fmt.Println("\n❌ Prime API withdrawal failed - rolling back...")
+
+		// Credit back the amount (reverse the withdrawal)
+		rollbackErr := services.DbService.ReverseWithdrawal(ctx, targetUser.Id, symbol, amount, idempotencyKey)
+		if rollbackErr != nil {
+			zap.L().Fatal("CRITICAL: Failed to rollback withdrawal - manual intervention required",
+				zap.String("user_id", targetUser.Id),
+				zap.String("asset", symbol),
+				zap.String("amount", amount.String()),
+				zap.String("original_tx", idempotencyKey),
+				zap.Error(rollbackErr))
+		}
+
+		fmt.Println("✅ Local balance restored (rollback successful)")
+		zap.L().Fatal("Prime API withdrawal failed (local balance rolled back)",
+			zap.Error(err))
 	}
 
 	fmt.Printf("✅ Withdrawal created successfully!\n")
@@ -194,24 +276,9 @@ func main() {
 	fmt.Printf("   Amount:      %s %s\n", withdrawal.Amount, withdrawal.Asset)
 	fmt.Printf("   Destination: %s\n\n", withdrawal.Destination)
 
-	/* Let listener handle this
-	// Step 6: Record withdrawal in database (negative amount)
-	zap.L().Info("Recording withdrawal in database")
-	err = services.DbService.ProcessWithdrawal(ctx, targetUser.Id, *assetFlag, amount, withdrawal.ActivityId)
-	if err != nil {
-		zap.L().Fatal("Failed to record withdrawal in database",
-			zap.String("activity_id", withdrawal.ActivityId),
-			zap.Error(err))
-	}
-
-	fmt.Println("✅ Withdrawal recorded in local database")
-	common.PrintSeparator("=", common.DefaultWidth)
-	fmt.Println()
-	*/
-
 	zap.L().Info("Withdrawal completed successfully",
 		zap.String("activity_id", withdrawal.ActivityId),
 		zap.String("user_id", targetUser.Id),
-		zap.String("asset", *assetFlag),
+		zap.String("asset", symbol),
 		zap.String("amount", amount.String()))
 }
