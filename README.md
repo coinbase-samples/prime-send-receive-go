@@ -15,7 +15,20 @@ This system processes crypto deposits and withdrawals by monitoring Prime API tr
 - Complete audit trail and transaction history
 - Configurable via environment variables
 
-**📐 [View Architecture Diagrams](ARCHITECTURE.md)** - System architecture, deposit/withdrawal flows, and database schema
+**[Architecture Diagrams](ARCHITECTURE.md)** - System architecture, deposit/withdrawal flows, and database schema
+
+**[E2E Testing Guide](E2E_TESTING.md)** - Step-by-step commands to test all functionality
+
+### Asset-Agnostic Balance Model
+
+The subledger mirrors Coinbase Prime's asset-agnostic trading balance model. Balances are tracked per **asset symbol only**, not per network.
+
+**Example:**
+- User deposits 1 USDC on Base → Balance: 1 USDC
+- User deposits 2 USDC on Ethereum → Balance: 3 USDC (aggregated)
+- User withdraws 1 USDC on Base → Balance: 2 USDC
+
+This design reflects how Prime manages trading balances internally, where the same asset on different networks contributes to a unified balance per symbol.
 
 ## Setup
 

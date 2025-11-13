@@ -88,9 +88,6 @@ func (d *SendReceiveListener) processWithdrawal(ctx context.Context, tx models.P
 	result, err := d.apiService.ProcessWithdrawal(ctx, userId, tx.Symbol, amount, tx.IdempotencyKey)
 	if err != nil {
 		if strings.Contains(err.Error(), "duplicate transaction") {
-			zap.L().Info("Withdrawal already processed by CLI - skipping listener debit",
-				zap.String("transaction_id", tx.Id),
-				zap.String("idempotency_key", tx.IdempotencyKey))
 			d.markTransactionProcessed(tx.Id)
 			return nil
 		}
@@ -101,8 +98,6 @@ func (d *SendReceiveListener) processWithdrawal(ctx context.Context, tx models.P
 		result, err = d.apiService.ProcessWithdrawal(ctx, userId, tx.Symbol, amount, tx.Id)
 		if err != nil {
 			if strings.Contains(err.Error(), "duplicate transaction") {
-				zap.L().Info("Duplicate withdrawal detected - already processed, marking as handled",
-					zap.String("transaction_id", tx.Id))
 				d.markTransactionProcessed(tx.Id)
 				return nil
 			}
@@ -112,9 +107,6 @@ func (d *SendReceiveListener) processWithdrawal(ctx context.Context, tx models.P
 
 	if !result.Success {
 		if strings.Contains(result.Error, "duplicate transaction") {
-			zap.L().Info("Duplicate withdrawal detected via result - already processed, marking as handled",
-				zap.String("transaction_id", tx.Id),
-				zap.String("idempotency_key", tx.IdempotencyKey))
 			d.markTransactionProcessed(tx.Id)
 			return nil
 		}

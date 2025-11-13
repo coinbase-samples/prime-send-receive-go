@@ -3,5 +3,5 @@ assets:
     network: "ethereum-mainnet"
   - symbol: "USDC"
     network: "base-mainnet"
-  - symbol: "SOL"
-    network: "solana-mainnet"
+  - symbol: "BTC"
+    network: "bitcoin-mainnet"
