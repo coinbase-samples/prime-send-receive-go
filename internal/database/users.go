@@ -82,3 +82,28 @@ func (s *Service) GetUserByEmail(ctx context.Context, email string) (*models.Use
 	zap.L().Debug("Retrieved user by email", zap.String("email", email), zap.String("name", user.Name))
 	return &user, nil
 }
+
+func (s *Service) CreateUser(ctx context.Context, userId, name, email string) (*models.User, error) {
+	zap.L().Info("Creating user", zap.String("id", userId), zap.String("name", name), zap.String("email", email))
+
+	result, err := s.db.ExecContext(ctx, queryInsertUser, userId, name, email)
+	if err != nil {
+		zap.L().Error("Failed to insert user", zap.String("email", email), zap.Error(err))
+		return nil, fmt.Errorf("unable to insert user: %v", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		zap.L().Error("Failed to get rows affected", zap.Error(err))
+		return nil, fmt.Errorf("unable to get rows affected: %v", err)
+	}
+
+	if rowsAffected == 0 {
+		return nil, fmt.Errorf("user with email %s already exists", email)
+	}
+
+	zap.L().Info("User created successfully", zap.String("id", userId), zap.String("name", name), zap.String("email", email))
+
+	// Return the created user
+	return s.GetUserByEmail(ctx, email)
+}

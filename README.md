@@ -15,6 +15,8 @@ This system processes crypto deposits and withdrawals by monitoring Prime API tr
 - Complete audit trail and transaction history
 - Configurable via environment variables
 
+**📐 [View Architecture Diagrams](ARCHITECTURE.md)** - System architecture, deposit/withdrawal flows, and database schema
+
 ## Setup
 
 ### 1. Environment Configuration
@@ -60,31 +62,53 @@ ASSETS_FILE=assets.yaml            # Asset configuration file
 
 ### 2. Asset Configuration
 
-Create `assets.yaml` to specify which cryptocurrencies to monitor. You must specify the appropriate network, e.g. `ethereum-mainnet`. A full list of such networks is returned by the [List Assets](https://docs.cdp.coinbase.com/api-reference/prime-api/rest-api/assets/list-assets) REST API:
+The application includes an `assets.yaml` file with default cryptocurrencies to monitor. You can modify this file to add or remove assets as needed.
+
+**Default configuration:**
 ```yaml
 assets:
   - symbol: "USDC"
     network: "ethereum-mainnet"
-  - symbol: "BTC"
-    network: "bitcoin-mainnet"
-  - symbol: "ETH"
-    network: "ethereum-mainnet"
+  - symbol: "USDC"
+    network: "base-mainnet"
   - symbol: "SOL"
     network: "solana-mainnet"
 ```
 
+You must specify the appropriate network for each asset (e.g., `ethereum-mainnet`, `base-mainnet`). A full list of supported networks is returned by the [List Assets](https://docs.cdp.coinbase.com/api-reference/prime-api/rest-api/assets/list-assets) REST API.
+
+**To customize:** Edit `assets.yaml` to add or remove assets based on your needs.
+
 ### 3. User Configuration
 
-By default, the system does not create any users. You can enable dummy user creation for testing by setting `CREATE_DUMMY_USERS=true` in your `.env` file, which will create three test users on first run: Alice Johnson, Bob Smith, and Carol Williams.
+By default, the system does not create any users. You have several options for adding users:
 
-To add your own users for production use, insert them directly into the SQLite database:
+**Option 1: Use the adduser CLI command (Recommended)**
 
+Add users with automatic address generation:
+```bash
+go run cmd/adduser/main.go --name "John Doe" --email "john.doe@example.com"
+```
+
+This command will:
+- Create the user in the database with a generated UUID
+- Validate the email format
+- Automatically generate deposit addresses for all assets configured in `assets.yaml`
+- Display a summary of created addresses
+
+**Option 2: Enable dummy users for testing**
+
+Set `CREATE_DUMMY_USERS=true` in your `.env` file to create three test users on first run: Alice Johnson, Bob Smith, and Carol Williams.
+
+**Option 3: Insert directly into SQLite database**
+
+For advanced use cases, you can insert users directly:
 ```sql
 INSERT INTO users (id, name, email) VALUES
   ('your-uuid-here', 'Your Name', 'your.email@example.com');
 ```
 
-Or create a script to add users programmatically using the database service.
+Then run `go run cmd/setup/main.go` to generate deposit addresses.
 
 ### 4. Initial Setup
 
@@ -104,7 +128,8 @@ This will:
 
 ```bash
 # Setup
-go run cmd/setup/main.go                    # Generate deposit addresses
+go run cmd/adduser/main.go [flags]          # Add new user with deposit addresses
+go run cmd/setup/main.go                    # Generate deposit addresses for existing users
 
 # Operations
 go run cmd/listener/main.go                 # Start transaction listener
@@ -130,6 +155,43 @@ This service:
 ### CLI Commands
 
 The system provides several CLI commands for managing and querying user balances and addresses.
+
+#### Add New User
+
+Create a new user with automatic deposit address generation:
+```bash
+# Add a user
+go run cmd/adduser/main.go \
+  --name "Jane Smith" \
+  --email "jane.smith@example.com"
+```
+
+The command will:
+- Validate the email format and name
+- Generate a unique UUID for the user
+- Create the user in the database
+- Automatically generate deposit addresses for all configured assets
+- Display the created user details and address summary
+
+**Required Flags:**
+- `--name`: User's full name (minimum 2 characters)
+- `--email`: User's email address (must be valid format and unique)
+
+**Example Output:**
+```
+USER CREATED
+ID:    a1b2c3d4-e5f6-7890-g1h2-i3j4k5l6m7n8
+Name:  Jane Smith
+Email: jane.smith@example.com
+
+🔄 Generating deposit addresses for 4 assets...
+  ✓ USDC-ethereum-mainnet: 0x123...
+  ✓ BTC-bitcoin-mainnet: bc1q...
+  ✓ ETH-ethereum-mainnet: 0x456...
+  ✓ SOL-solana-mainnet: 7Np...
+
+✅ User and all deposit addresses created successfully!
+```
 
 #### View User Addresses
 
