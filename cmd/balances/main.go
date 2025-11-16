@@ -7,9 +7,94 @@ import (
 
 	"prime-send-receive-go/internal/common"
 	"prime-send-receive-go/internal/config"
+	"prime-send-receive-go/internal/database"
+	"prime-send-receive-go/internal/models"
 
 	"go.uber.org/zap"
 )
+
+type balanceStats struct {
+	totalUsers        int
+	totalBalances     int
+	usersWithBalances int
+}
+
+func formatTransactionId(txId string) string {
+	if txId == "" {
+		return "none"
+	}
+	if len(txId) > 8 {
+		return txId[:8] + "..."
+	}
+	return txId
+}
+
+func printBalance(balance models.AccountBalance, isLast bool) {
+	symbol := common.BoxPrefix(isLast)
+	lastTx := formatTransactionId(balance.LastTransactionId)
+
+	fmt.Printf("%s %-15s: %20s (v%d, last_tx: %s, updated: %s)\n",
+		symbol,
+		balance.Asset,
+		balance.Balance.String(),
+		balance.Version,
+		lastTx,
+		balance.UpdatedAt.Format("2006-01-02 15:04:05"))
+}
+
+func printBalances(balances []models.AccountBalance) {
+	for i, balance := range balances {
+		isLast := i == len(balances)-1
+		printBalance(balance, isLast)
+	}
+}
+
+func printUserHeader(user common.UserInfo, balanceCount int) {
+	fmt.Printf("\n┌─ User: %s (%s)\n", user.Name, user.Email)
+	fmt.Printf("│  ID: %s\n", user.Id)
+	fmt.Printf("│  Assets: %d\n", balanceCount)
+	common.PrintBoxSeparator(78)
+}
+
+func processUser(ctx context.Context, user common.UserInfo, dbService *database.Service, logger *zap.Logger) (int, error) {
+	balances, err := dbService.GetAllUserBalances(ctx, user.Id)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get balances: %w", err)
+	}
+
+	if len(balances) == 0 {
+		return 0, nil
+	}
+
+	printUserHeader(user, len(balances))
+	printBalances(balances)
+
+	return len(balances), nil
+}
+
+func processUsersAndGenerateReport(ctx context.Context, users []common.UserInfo, dbService *database.Service, logger *zap.Logger) balanceStats {
+	stats := balanceStats{}
+
+	for _, user := range users {
+		stats.totalUsers++
+
+		balanceCount, err := processUser(ctx, user, dbService, logger)
+		if err != nil {
+			logger.Error("Failed to process user",
+				zap.String("user_id", user.Id),
+				zap.String("user_name", user.Name),
+				zap.Error(err))
+			continue
+		}
+
+		if balanceCount > 0 {
+			stats.usersWithBalances++
+			stats.totalBalances += balanceCount
+		}
+	}
+
+	return stats
+}
 
 func main() {
 	ctx := context.Background()
@@ -37,115 +122,25 @@ func main() {
 	}
 	defer dbService.Close()
 
-	var users []struct {
-		Id    string
-		Name  string
-		Email string
+	// Initialize users based on filter
+	users, err := common.InitializeUsers(ctx, dbService, *emailFlag, logger)
+	if err != nil {
+		logger.Fatal("Failed to initialize users", zap.Error(err))
 	}
-
-	// Get users - either specific user by email or all users
-	if *emailFlag != "" {
-		// Query specific user by email
-		logger.Info("Looking up user by email", zap.String("email", *emailFlag))
-		user, err := dbService.GetUserByEmail(ctx, *emailFlag)
-		if err != nil {
-			logger.Fatal("User not found", zap.String("email", *emailFlag), zap.Error(err))
-		}
-		users = append(users, struct {
-			Id    string
-			Name  string
-			Email string
-		}{
-			Id:    user.Id,
-			Name:  user.Name,
-			Email: user.Email,
-		})
-	} else {
-		// Get all users
-		allUsers, err := dbService.GetUsers(ctx)
-		if err != nil {
-			logger.Fatal("Failed to get users", zap.Error(err))
-		}
-		for _, u := range allUsers {
-			users = append(users, struct {
-				Id    string
-				Name  string
-				Email string
-			}{
-				Id:    u.Id,
-				Name:  u.Name,
-				Email: u.Email,
-			})
-		}
-	}
-
-	logger.Info("Retrieved users", zap.Int("count", len(users)))
-
-	// Track totals
-	totalUsers := 0
-	totalBalances := 0
-	usersWithBalances := 0
 
 	// Print header
 	common.PrintHeader("USER BALANCE REPORT", common.DefaultWidth)
 
-	// Process each user
-	for _, user := range users {
-		totalUsers++
-
-		// Get all balances for this user
-		balances, err := dbService.GetAllUserBalances(ctx, user.Id)
-		if err != nil {
-			logger.Error("Failed to get balances for user",
-				zap.String("user_id", user.Id),
-				zap.String("user_name", user.Name),
-				zap.Error(err))
-			continue
-		}
-
-		// Skip users with no balances
-		if len(balances) == 0 {
-			continue
-		}
-
-		usersWithBalances++
-		totalBalances += len(balances)
-
-		// Print user header
-		fmt.Printf("\n┌─ User: %s (%s)\n", user.Name, user.Email)
-		fmt.Printf("│  ID: %s\n", user.Id)
-		fmt.Printf("│  Assets: %d\n", len(balances))
-		common.PrintBoxSeparator(78)
-
-		// Print each balance
-		for i, balance := range balances {
-			lastTx := balance.LastTransactionId
-			if lastTx == "" {
-				lastTx = "none"
-			} else if len(lastTx) > 8 {
-				lastTx = lastTx[:8] + "..."
-			}
-
-			isLast := i == len(balances)-1
-			symbol := common.BoxPrefix(isLast)
-
-			fmt.Printf("%s %-15s: %20s (v%d, last_tx: %s, updated: %s)\n",
-				symbol,
-				balance.Asset,
-				balance.Balance.String(),
-				balance.Version,
-				lastTx,
-				balance.UpdatedAt.Format("2006-01-02 15:04:05"))
-		}
-	}
+	// Process users and generate report
+	stats := processUsersAndGenerateReport(ctx, users, dbService, logger)
 
 	// Print footer summary
 	summary := fmt.Sprintf("SUMMARY: %d users with balances (%d total balances across %d users queried)",
-		usersWithBalances, totalBalances, totalUsers)
+		stats.usersWithBalances, stats.totalBalances, stats.totalUsers)
 	common.PrintFooter(summary, common.DefaultWidth)
 
 	logger.Info("Balance query completed",
-		zap.Int("users_queried", totalUsers),
-		zap.Int("users_with_balances", usersWithBalances),
-		zap.Int("total_balances", totalBalances))
+		zap.Int("users_queried", stats.totalUsers),
+		zap.Int("users_with_balances", stats.usersWithBalances),
+		zap.Int("total_balances", stats.totalBalances))
 }

@@ -7,9 +7,86 @@ import (
 
 	"prime-send-receive-go/internal/common"
 	"prime-send-receive-go/internal/config"
+	"prime-send-receive-go/internal/database"
+	"prime-send-receive-go/internal/models"
 
 	"go.uber.org/zap"
 )
+
+type reportStats struct {
+	totalUsers         int
+	totalAddresses     int
+	usersWithAddresses int
+}
+
+func printUserHeader(user common.UserInfo, addressCount int) {
+	fmt.Printf("\n┌─ User: %s (%s)\n", user.Name, user.Email)
+	fmt.Printf("│  ID: %s\n", user.Id)
+	fmt.Printf("│  Addresses: %d\n", addressCount)
+	common.PrintBoxSeparator(98)
+}
+
+func printAddress(addr models.Address, isLast bool) {
+	symbol := common.BoxPrefix(isLast)
+	assetNetwork := fmt.Sprintf("%s-%s", addr.Asset, addr.Network)
+	fmt.Printf("%s %-30s → %s\n", symbol, assetNetwork, addr.Address)
+
+	if shouldPrintAccountIdentifier(addr) {
+		detailSymbol := common.BoxDetailPrefix(isLast)
+		fmt.Printf("%s   Account ID: %s\n", detailSymbol, addr.AccountIdentifier)
+	}
+}
+
+func shouldPrintAccountIdentifier(addr models.Address) bool {
+	return addr.AccountIdentifier != "" && addr.AccountIdentifier != addr.Address
+}
+
+func printAddresses(addresses []models.Address) {
+	for i, addr := range addresses {
+		isLast := i == len(addresses)-1
+		printAddress(addr, isLast)
+	}
+}
+
+func processUser(ctx context.Context, user common.UserInfo, dbService *database.Service, logger *zap.Logger) (int, error) {
+	addresses, err := dbService.GetAllUserAddresses(ctx, user.Id)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get addresses: %w", err)
+	}
+
+	if len(addresses) == 0 {
+		return 0, nil
+	}
+
+	printUserHeader(user, len(addresses))
+	printAddresses(addresses)
+
+	return len(addresses), nil
+}
+
+func processUsersAndGenerateReport(ctx context.Context, users []common.UserInfo, dbService *database.Service, logger *zap.Logger) reportStats {
+	stats := reportStats{}
+
+	for _, user := range users {
+		stats.totalUsers++
+
+		addressCount, err := processUser(ctx, user, dbService, logger)
+		if err != nil {
+			logger.Error("Failed to process user",
+				zap.String("user_id", user.Id),
+				zap.String("user_name", user.Name),
+				zap.Error(err))
+			continue
+		}
+
+		if addressCount > 0 {
+			stats.usersWithAddresses++
+			stats.totalAddresses += addressCount
+		}
+	}
+
+	return stats
+}
 
 func main() {
 	ctx := context.Background()
@@ -37,113 +114,24 @@ func main() {
 	}
 	defer dbService.Close()
 
-	var users []struct {
-		Id    string
-		Name  string
-		Email string
+	users, err := common.InitializeUsers(ctx, dbService, *emailFlag, logger)
+	if err != nil {
+		logger.Fatal("Failed to initialize users", zap.Error(err))
 	}
-
-	// Get users
-	if *emailFlag != "" {
-		// Query specific user by email
-		logger.Info("Looking up user by email", zap.String("email", *emailFlag))
-		user, err := dbService.GetUserByEmail(ctx, *emailFlag)
-		if err != nil {
-			logger.Fatal("User not found", zap.String("email", *emailFlag), zap.Error(err))
-		}
-		users = append(users, struct {
-			Id    string
-			Name  string
-			Email string
-		}{
-			Id:    user.Id,
-			Name:  user.Name,
-			Email: user.Email,
-		})
-	} else {
-		// Get all users
-		allUsers, err := dbService.GetUsers(ctx)
-		if err != nil {
-			logger.Fatal("Failed to get users", zap.Error(err))
-		}
-		for _, u := range allUsers {
-			users = append(users, struct {
-				Id    string
-				Name  string
-				Email string
-			}{
-				Id:    u.Id,
-				Name:  u.Name,
-				Email: u.Email,
-			})
-		}
-	}
-
-	logger.Info("Retrieved users", zap.Int("count", len(users)))
-
-	// Track totals
-	totalUsers := 0
-	totalAddresses := 0
-	usersWithAddresses := 0
 
 	// Print header
 	common.PrintHeader("DEPOSIT ADDRESSES REPORT", common.WideWidth)
 
-	// Process each user
-	for _, user := range users {
-		totalUsers++
-
-		// Get all addresses for this user
-		addresses, err := dbService.GetAllUserAddresses(ctx, user.Id)
-		if err != nil {
-			logger.Error("Failed to get addresses for user",
-				zap.String("user_id", user.Id),
-				zap.String("user_name", user.Name),
-				zap.Error(err))
-			continue
-		}
-
-		// Skip users with no addresses
-		if len(addresses) == 0 {
-			continue
-		}
-
-		usersWithAddresses++
-		totalAddresses += len(addresses)
-
-		// Print user header
-		fmt.Printf("\n┌─ User: %s (%s)\n", user.Name, user.Email)
-		fmt.Printf("│  ID: %s\n", user.Id)
-		fmt.Printf("│  Addresses: %d\n", len(addresses))
-		common.PrintBoxSeparator(98)
-
-		// Print each address
-		for i, addr := range addresses {
-			isLast := i == len(addresses)-1
-			symbol := common.BoxPrefix(isLast)
-
-			// Format: Asset-Network (e.g., "ETH-ethereum-mainnet")
-			assetNetwork := fmt.Sprintf("%s-%s", addr.Asset, addr.Network)
-			fmt.Printf("%s %-30s → %s\n",
-				symbol,
-				assetNetwork,
-				addr.Address)
-
-			// Add extra details on next line if account identifier differs
-			if addr.AccountIdentifier != "" && addr.AccountIdentifier != addr.Address {
-				detailSymbol := common.BoxDetailPrefix(isLast)
-				fmt.Printf("%s   Account ID: %s\n", detailSymbol, addr.AccountIdentifier)
-			}
-		}
-	}
+	// Process users and generate report
+	stats := processUsersAndGenerateReport(ctx, users, dbService, logger)
 
 	// Print footer summary
 	summary := fmt.Sprintf("SUMMARY: %d users with addresses (%d total addresses across %d users queried)",
-		usersWithAddresses, totalAddresses, totalUsers)
+		stats.usersWithAddresses, stats.totalAddresses, stats.totalUsers)
 	common.PrintFooter(summary, common.WideWidth)
 
 	logger.Info("Address query completed",
-		zap.Int("users_queried", totalUsers),
-		zap.Int("users_with_addresses", usersWithAddresses),
-		zap.Int("total_addresses", totalAddresses))
+		zap.Int("users_queried", stats.totalUsers),
+		zap.Int("users_with_addresses", stats.usersWithAddresses),
+		zap.Int("total_addresses", stats.totalAddresses))
 }

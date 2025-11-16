@@ -8,6 +8,7 @@ import (
 
 	"prime-send-receive-go/internal/common"
 	"prime-send-receive-go/internal/config"
+	"prime-send-receive-go/internal/database"
 	"prime-send-receive-go/internal/models"
 
 	"go.uber.org/zap"
@@ -99,7 +100,14 @@ func createAndStoreAddress(ctx context.Context, services *common.Services, user 
 		zap.String("address", depositAddress.Address))
 
 	// Store with separate asset and network columns
-	storedAddress, err := services.DbService.StoreAddress(ctx, user.Id, assetConfig.Symbol, assetConfig.Network, depositAddress.Address, wallet.Id, depositAddress.Id)
+	storedAddress, err := services.DbService.StoreAddress(ctx, database.StoreAddressParams{
+		UserId:            user.Id,
+		Asset:             assetConfig.Symbol,
+		Network:           assetConfig.Network,
+		Address:           depositAddress.Address,
+		WalletId:          wallet.Id,
+		AccountIdentifier: depositAddress.Id,
+	})
 	if err != nil {
 		zap.L().Error("Error storing address to database",
 			zap.String("asset", assetConfig.Symbol),
@@ -135,8 +143,10 @@ func processUserAsset(ctx context.Context, services *common.Services, user model
 	if err != nil {
 		return err
 	}
+
+	// Skip if address already exists
 	if exists {
-		return nil // Already has address, skip
+		return nil
 	}
 
 	// Get or create wallet

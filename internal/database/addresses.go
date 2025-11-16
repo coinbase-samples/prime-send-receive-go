@@ -11,24 +11,33 @@ import (
 	"go.uber.org/zap"
 )
 
-func (s *Service) StoreAddress(ctx context.Context, userId string, asset, network, address, walletId, accountIdentifier string) (*models.Address, error) {
+type StoreAddressParams struct {
+	UserId            string
+	Asset             string
+	Network           string
+	Address           string
+	WalletId          string
+	AccountIdentifier string
+}
+
+func (s *Service) StoreAddress(ctx context.Context, params StoreAddressParams) (*models.Address, error) {
 	zap.L().Info("Storing address",
-		zap.String("user_id", userId),
-		zap.String("asset", asset),
-		zap.String("network", network),
-		zap.String("address", address))
+		zap.String("user_id", params.UserId),
+		zap.String("asset", params.Asset),
+		zap.String("network", params.Network),
+		zap.String("address", params.Address))
 
 	// Generate UUID for the address
 	addressId := uuid.New().String()
 
 	addr := &models.Address{}
-	err := s.db.QueryRowContext(ctx, queryInsertAddress, addressId, userId, asset, network, address, walletId, accountIdentifier).Scan(
+	err := s.db.QueryRowContext(ctx, queryInsertAddress, addressId, params.UserId, params.Asset, params.Network, params.Address, params.WalletId, params.AccountIdentifier).Scan(
 		&addr.Id, &addr.UserId, &addr.Asset, &addr.Network, &addr.Address, &addr.WalletId, &addr.AccountIdentifier, &addr.CreatedAt,
 	)
 	if err != nil {
 		zap.L().Error("Failed to insert address",
-			zap.String("user_id", userId),
-			zap.String("asset", asset),
+			zap.String("user_id", params.UserId),
+			zap.String("asset", params.Asset),
 			zap.Error(err))
 		return nil, fmt.Errorf("unable to insert address: %v", err)
 	}

@@ -9,12 +9,25 @@ import (
 
 	"prime-send-receive-go/internal/common"
 	"prime-send-receive-go/internal/config"
+	"prime-send-receive-go/internal/database"
 
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 )
 
 var emailRegex = regexp.MustCompile(`^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$`)
+
+type addressGenerationResult struct {
+	success      bool
+	assetSymbol  string
+	assetNetwork string
+	address      string
+}
+
+type generationStats struct {
+	successCount int
+	failedAssets []string
+}
 
 func validateEmail(email string) error {
 	if email == "" {
@@ -34,6 +47,138 @@ func validateName(name string) error {
 		return fmt.Errorf("name must be at least 2 characters")
 	}
 	return nil
+}
+
+func checkExistingAddress(ctx context.Context, services *common.Services, userId string, assetConfig common.AssetConfig) (bool, error) {
+	existingAddresses, err := services.DbService.GetAddresses(ctx, userId, assetConfig.Symbol, assetConfig.Network)
+	if err != nil {
+		return false, fmt.Errorf("error checking existing addresses: %w", err)
+	}
+	return len(existingAddresses) > 0, nil
+}
+
+func getOrCreateWallet(ctx context.Context, services *common.Services, assetSymbol string) (string, error) {
+	wallets, err := services.PrimeService.ListWallets(ctx, services.DefaultPortfolio.Id, "TRADING", []string{assetSymbol})
+	if err != nil {
+		return "", fmt.Errorf("error listing wallets: %w", err)
+	}
+
+	if len(wallets) > 0 {
+		walletId := wallets[0].Id
+		zap.L().Info("Using existing wallet",
+			zap.String("asset", assetSymbol),
+			zap.String("wallet_id", walletId))
+		return walletId, nil
+	}
+
+	walletName := fmt.Sprintf("%s Trading Wallet", assetSymbol)
+	zap.L().Info("Creating new wallet",
+		zap.String("asset", assetSymbol),
+		zap.String("wallet_name", walletName))
+
+	newWallet, err := services.PrimeService.CreateWallet(ctx, services.DefaultPortfolio.Id, walletName, assetSymbol, "TRADING")
+	if err != nil {
+		return "", fmt.Errorf("error creating wallet: %w", err)
+	}
+
+	return newWallet.Id, nil
+}
+
+func generateAndStoreAddress(ctx context.Context, services *common.Services, userId string, assetConfig common.AssetConfig, walletId string) (string, error) {
+	zap.L().Info("Creating deposit address",
+		zap.String("asset", assetConfig.Symbol),
+		zap.String("network", assetConfig.Network),
+		zap.String("wallet_id", walletId))
+
+	depositAddress, err := services.PrimeService.CreateDepositAddress(ctx, services.DefaultPortfolio.Id, walletId, assetConfig.Symbol, assetConfig.Network)
+	if err != nil {
+		return "", fmt.Errorf("error creating deposit address: %w", err)
+	}
+
+	storedAddress, err := services.DbService.StoreAddress(ctx, database.StoreAddressParams{
+		UserId:            userId,
+		Asset:             assetConfig.Symbol,
+		Network:           assetConfig.Network,
+		Address:           depositAddress.Address,
+		WalletId:          walletId,
+		AccountIdentifier: depositAddress.Id,
+	})
+	if err != nil {
+		return "", fmt.Errorf("error storing address to database: %w", err)
+	}
+
+	return storedAddress.Address, nil
+}
+
+func processAsset(ctx context.Context, services *common.Services, userId string, assetConfig common.AssetConfig) addressGenerationResult {
+	zap.L().Info("Processing asset",
+		zap.String("asset", assetConfig.Symbol),
+		zap.String("network", assetConfig.Network))
+
+	result := addressGenerationResult{
+		assetSymbol:  assetConfig.Symbol,
+		assetNetwork: assetConfig.Network,
+	}
+
+	// Check if address already exists
+	exists, err := checkExistingAddress(ctx, services, userId, assetConfig)
+	if err != nil {
+		zap.L().Error("Failed to check existing addresses",
+			zap.String("asset", assetConfig.Symbol),
+			zap.Error(err))
+		return result
+	}
+
+	if exists {
+		fmt.Printf("✓ %s-%s: Address already exists\n", assetConfig.Symbol, assetConfig.Network)
+		result.success = true
+		return result
+	}
+
+	// Get or create wallet
+	walletId, err := getOrCreateWallet(ctx, services, assetConfig.Symbol)
+	if err != nil {
+		zap.L().Error("Failed to get or create wallet",
+			zap.String("asset", assetConfig.Symbol),
+			zap.Error(err))
+		fmt.Printf("✗ %s-%s: Failed to get wallet\n", assetConfig.Symbol, assetConfig.Network)
+		return result
+	}
+
+	// Generate and store address
+	address, err := generateAndStoreAddress(ctx, services, userId, assetConfig, walletId)
+	if err != nil {
+		zap.L().Error("Failed to generate or store address",
+			zap.String("asset", assetConfig.Symbol),
+			zap.Error(err))
+		fmt.Printf("✗ %s-%s: Failed to create address\n", assetConfig.Symbol, assetConfig.Network)
+		return result
+	}
+
+	fmt.Printf("✓ %s-%s: %s\n", assetConfig.Symbol, assetConfig.Network, address)
+	result.success = true
+	result.address = address
+	return result
+}
+
+func generateAddressesForUser(ctx context.Context, services *common.Services, userId string, assetConfigs []common.AssetConfig) generationStats {
+	fmt.Printf("Generating deposit addresses for %d assets...\n\n", len(assetConfigs))
+
+	stats := generationStats{
+		failedAssets: []string{},
+	}
+
+	for _, assetConfig := range assetConfigs {
+		result := processAsset(ctx, services, userId, assetConfig)
+
+		if result.success {
+			stats.successCount++
+		} else {
+			stats.failedAssets = append(stats.failedAssets, assetConfig.Symbol)
+		}
+	}
+
+	return stats
 }
 
 func main() {
@@ -123,121 +268,32 @@ func main() {
 	}
 
 	// Generate deposit addresses for all configured assets
-	fmt.Printf("Generating deposit addresses for %d assets...\n\n", len(assetConfigs))
-
-	successCount := 0
-	failedAssets := []string{}
-
-	for _, assetConfig := range assetConfigs {
-		zap.L().Info("Processing asset",
-			zap.String("asset", assetConfig.Symbol),
-			zap.String("network", assetConfig.Network))
-
-		// Check if address already exists
-		existingAddresses, err := services.DbService.GetAddresses(ctx, user.Id, assetConfig.Symbol, assetConfig.Network)
-		if err != nil {
-			zap.L().Error("Error checking existing addresses",
-				zap.String("asset", assetConfig.Symbol),
-				zap.Error(err))
-			failedAssets = append(failedAssets, assetConfig.Symbol)
-			continue
-		}
-
-		if len(existingAddresses) > 0 {
-			fmt.Printf("✓ %s-%s: Address already exists\n", assetConfig.Symbol, assetConfig.Network)
-			successCount++
-			continue
-		}
-
-		// Get or create wallet
-		wallets, err := services.PrimeService.ListWallets(ctx, services.DefaultPortfolio.Id, "TRADING", []string{assetConfig.Symbol})
-		if err != nil {
-			zap.L().Error("Error listing wallets",
-				zap.String("asset", assetConfig.Symbol),
-				zap.Error(err))
-			failedAssets = append(failedAssets, assetConfig.Symbol)
-			continue
-		}
-
-		var walletId string
-		if len(wallets) > 0 {
-			walletId = wallets[0].Id
-			zap.L().Info("Using existing wallet",
-				zap.String("asset", assetConfig.Symbol),
-				zap.String("wallet_id", walletId))
-		} else {
-			walletName := fmt.Sprintf("%s Trading Wallet", assetConfig.Symbol)
-			zap.L().Info("Creating new wallet",
-				zap.String("asset", assetConfig.Symbol),
-				zap.String("wallet_name", walletName))
-			newWallet, err := services.PrimeService.CreateWallet(ctx, services.DefaultPortfolio.Id, walletName, assetConfig.Symbol, "TRADING")
-			if err != nil {
-				zap.L().Error("Error creating wallet",
-					zap.String("asset", assetConfig.Symbol),
-					zap.Error(err))
-				failedAssets = append(failedAssets, assetConfig.Symbol)
-				continue
-			}
-			walletId = newWallet.Id
-		}
-
-		// Create deposit address
-		zap.L().Info("Creating deposit address",
-			zap.String("asset", assetConfig.Symbol),
-			zap.String("network", assetConfig.Network),
-			zap.String("wallet_id", walletId))
-
-		depositAddress, err := services.PrimeService.CreateDepositAddress(ctx, services.DefaultPortfolio.Id, walletId, assetConfig.Symbol, assetConfig.Network)
-		if err != nil {
-			zap.L().Error("Error creating deposit address",
-				zap.String("asset", assetConfig.Symbol),
-				zap.String("network", assetConfig.Network),
-				zap.Error(err))
-			failedAssets = append(failedAssets, assetConfig.Symbol)
-			fmt.Printf("✗ %s-%s: Failed to create address\n", assetConfig.Symbol, assetConfig.Network)
-			continue
-		}
-
-		// Store address in database
-		storedAddress, err := services.DbService.StoreAddress(ctx, user.Id, assetConfig.Symbol, assetConfig.Network, depositAddress.Address, walletId, depositAddress.Id)
-		if err != nil {
-			zap.L().Error("Error storing address to database",
-				zap.String("asset", assetConfig.Symbol),
-				zap.String("address", depositAddress.Address),
-				zap.Error(err))
-			failedAssets = append(failedAssets, assetConfig.Symbol)
-			fmt.Printf("✗ %s-%s: Failed to store address\n", assetConfig.Symbol, assetConfig.Network)
-			continue
-		}
-
-		fmt.Printf("✓ %s-%s: %s\n", assetConfig.Symbol, assetConfig.Network, storedAddress.Address)
-		successCount++
-	}
+	stats := generateAddressesForUser(ctx, services, user.Id, assetConfigs)
 
 	// Print summary
 	fmt.Println()
 	common.PrintHeader("ADDRESS GENERATION SUMMARY", common.DefaultWidth)
 	fmt.Printf("Total Assets:      %d\n", len(assetConfigs))
-	fmt.Printf("Successful:        %d\n", successCount)
-	fmt.Printf("Failed:            %d\n", len(failedAssets))
-	if len(failedAssets) > 0 {
-		fmt.Printf("Failed Assets:     %s\n", strings.Join(failedAssets, ", "))
+	fmt.Printf("Successful:        %d\n", stats.successCount)
+	fmt.Printf("Failed:            %d\n", len(stats.failedAssets))
+	if len(stats.failedAssets) > 0 {
+		fmt.Printf("Failed Assets:     %s\n", strings.Join(stats.failedAssets, ", "))
 	}
 	common.PrintSeparator("=", common.DefaultWidth)
 	fmt.Println()
 
-	if len(failedAssets) > 0 {
+	if len(stats.failedAssets) > 0 {
 		zap.L().Warn("User created but some addresses failed to generate",
 			zap.String("user_id", user.Id),
-			zap.Int("successful", successCount),
-			zap.Int("failed", len(failedAssets)),
-			zap.Strings("failed_assets", failedAssets))
+			zap.Int("successful", stats.successCount),
+			zap.Int("failed", len(stats.failedAssets)),
+			zap.Strings("failed_assets", stats.failedAssets))
 		fmt.Println("User created successfully but some deposit addresses failed to generate")
 		fmt.Println("You can re-run setup to retry: go run cmd/setup/main.go")
 	} else {
 		zap.L().Info("User and all addresses created successfully",
 			zap.String("user_id", user.Id),
-			zap.Int("addresses_created", successCount))
+			zap.Int("addresses_created", stats.successCount))
 		fmt.Println("User and all deposit addresses created successfully!")
 	}
 }
