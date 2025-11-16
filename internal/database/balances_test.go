@@ -7,7 +7,6 @@ import (
 
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/shopspring/decimal"
-	"go.uber.org/zap"
 )
 
 func setupBalanceTestDB(t *testing.T) (*Service, func()) {
@@ -16,12 +15,10 @@ func setupBalanceTestDB(t *testing.T) (*Service, func()) {
 		t.Fatalf("Failed to open test database: %v", err)
 	}
 
-	logger := zap.NewNop()
-	subledger := NewSubledgerService(db, logger)
+	subledger := NewSubledgerService(db)
 	service := &Service{
 		db:        db,
 		subledger: subledger,
-		logger:    logger,
 	}
 
 	if err := subledger.InitSchema(); err != nil {
@@ -92,13 +89,13 @@ func TestGetUserBalance_WithTransactions(t *testing.T) {
 	asset := "BTC"
 
 	depositAmount := decimal.NewFromFloat(2.0)
-	_, err := service.subledger.ProcessTransaction(ctx, userId, asset, "deposit", depositAmount, "tx1", "addr1", "")
+	_, err := service.subledger.ProcessTransaction(ctx, ProcessTransactionParams{userId, asset, "deposit", depositAmount, "tx1", "addr1", ""})
 	if err != nil {
 		t.Fatalf("Failed to create deposit: %v", err)
 	}
 
 	withdrawalAmount := decimal.NewFromFloat(-0.5)
-	_, err = service.subledger.ProcessTransaction(ctx, userId, asset, "withdrawal", withdrawalAmount, "tx2", "", "")
+	_, err = service.subledger.ProcessTransaction(ctx, ProcessTransactionParams{userId, asset, "withdrawal", withdrawalAmount, "tx2", "", ""})
 	if err != nil {
 		t.Fatalf("Failed to create withdrawal: %v", err)
 	}
@@ -122,13 +119,13 @@ func TestGetAllUserBalances(t *testing.T) {
 	userId := "user1"
 
 	btcAmount := decimal.NewFromFloat(1.0)
-	_, err := service.subledger.ProcessTransaction(ctx, userId, "BTC", "deposit", btcAmount, "tx1", "", "")
+	_, err := service.subledger.ProcessTransaction(ctx, ProcessTransactionParams{userId, "BTC", "deposit", btcAmount, "tx1", "", ""})
 	if err != nil {
 		t.Fatalf("Failed to create BTC deposit: %v", err)
 	}
 
 	ethAmount := decimal.NewFromFloat(10.0)
-	_, err = service.subledger.ProcessTransaction(ctx, userId, "ETH", "deposit", ethAmount, "tx2", "", "")
+	_, err = service.subledger.ProcessTransaction(ctx, ProcessTransactionParams{userId, "ETH", "deposit", ethAmount, "tx2", "", ""})
 	if err != nil {
 		t.Fatalf("Failed to create ETH deposit: %v", err)
 	}

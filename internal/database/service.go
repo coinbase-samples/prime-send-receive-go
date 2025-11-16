@@ -180,7 +180,15 @@ func (s *Service) ProcessDeposit(ctx context.Context, address, asset string, amo
 			zap.String("network", addr.Network))
 	}
 
-	_, err = s.subledger.ProcessTransaction(ctx, user.Id, canonicalSymbol, "deposit", amount, transactionId, address, "")
+	_, err = s.subledger.ProcessTransaction(ctx, ProcessTransactionParams{
+		UserId:          user.Id,
+		Asset:           canonicalSymbol,
+		TransactionType: "deposit",
+		Amount:          amount,
+		ExternalTxId:    transactionId,
+		Address:         address,
+		Reference:       "",
+	})
 	if err != nil {
 		return fmt.Errorf("error processing deposit transaction: %v", err)
 	}
@@ -215,7 +223,15 @@ func (s *Service) ProcessWithdrawal(ctx context.Context, userId, asset string, a
 		zap.String("current_balance", currentBalance.String()),
 		zap.String("withdrawal_amount", amount.String()))
 
-	_, err = s.subledger.ProcessTransaction(ctx, user.Id, asset, "withdrawal", amount.Neg(), transactionId, "", "")
+	_, err = s.subledger.ProcessTransaction(ctx, ProcessTransactionParams{
+		UserId:          user.Id,
+		Asset:           asset,
+		TransactionType: "withdrawal",
+		Amount:          amount.Neg(),
+		ExternalTxId:    transactionId,
+		Address:         "",
+		Reference:       "",
+	})
 	if err != nil {
 		return fmt.Errorf("error processing withdrawal transaction: %v", err)
 	}
@@ -253,7 +269,15 @@ func (s *Service) ReverseWithdrawal(ctx context.Context, userId, asset string, a
 		zap.String("reversal_tx", reversalTxId))
 
 	// Credit back the amount (deposit to reverse the withdrawal)
-	_, err := s.subledger.ProcessTransaction(ctx, userId, asset, "deposit", amount, reversalTxId, "", "Reversal of failed withdrawal")
+	_, err := s.subledger.ProcessTransaction(ctx, ProcessTransactionParams{
+		UserId:          userId,
+		Asset:           asset,
+		TransactionType: "deposit",
+		Amount:          amount,
+		ExternalTxId:    reversalTxId,
+		Address:         "",
+		Reference:       "Reversal of failed withdrawal",
+	})
 	if err != nil {
 		return fmt.Errorf("error reversing withdrawal: %v", err)
 	}

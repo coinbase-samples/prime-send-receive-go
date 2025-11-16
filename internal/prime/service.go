@@ -171,38 +171,55 @@ func (s *Service) CreateWallet(ctx context.Context, portfolioId, name, symbol, w
 	}, nil
 }
 
-// CreateWithdrawal creates a withdrawal from a wallet
-func (s *Service) CreateWithdrawal(ctx context.Context, portfolioId, walletId, destinationAddress, amount, asset, idempotencyKey string) (*models.Withdrawal, error) {
-	zap.L().Info("Creating withdrawal via Prime API",
-		zap.String("portfolio_id", portfolioId),
-		zap.String("wallet_id", walletId),
-		zap.String("asset", asset),
-		zap.String("amount", amount),
-		zap.String("destination", destinationAddress))
+// CreateWithdrawalParams contains parameters for creating a withdrawal
+type CreateWithdrawalParams struct {
+	PortfolioId        string
+	WalletId           string
+	DestinationAddress string
+	Amount             string
+	Asset              string
+	IdempotencyKey     string
+}
 
-	// ETH-ethereum-mainnet --> ETH and ethereum and mainnet
-	symbol := strings.Split(asset, "-")[0]
-	/* TODO: multinetwork feature flag
-	networkId := strings.Split(asset, "-")[1]
-	networkType := strings.Split(asset, "-")[2]
-	*/
+// CreateWithdrawal creates a withdrawal from a wallet
+func (s *Service) CreateWithdrawal(ctx context.Context, params CreateWithdrawalParams) (*models.Withdrawal, error) {
+	zap.L().Info("Creating withdrawal via Prime API",
+		zap.String("portfolio_id", params.PortfolioId),
+		zap.String("wallet_id", params.WalletId),
+		zap.String("asset", params.Asset),
+		zap.String("amount", params.Amount),
+		zap.String("destination", params.DestinationAddress))
+
+	// Parse asset string: ETH-ethereum-mainnet --> ETH, ethereum, mainnet
+	// Or just: ETH --> ETH (defaults to ethereum-mainnet in Prime API)
+	parts := strings.Split(params.Asset, "-")
+	symbol := parts[0]
+
+	blockchainAddr := &model.BlockchainAddress{
+		Address: params.DestinationAddress,
+	}
+
+	// If network is specified, include it in the request
+	if len(parts) >= 3 {
+		networkId := parts[1]
+		networkType := parts[2]
+		blockchainAddr.Network = &model.NetworkDetails{
+			Id:   networkId,
+			Type: networkType,
+		}
+		zap.L().Debug("Including network details in withdrawal",
+			zap.String("network_id", networkId),
+			zap.String("network_type", networkType))
+	}
 
 	request := &transactions.CreateWalletWithdrawalRequest{
-		PortfolioId:     portfolioId,
-		SourceWalletId:  walletId,
-		Amount:          amount,
-		IdempotencyKey:  idempotencyKey,
-		Symbol:          symbol,
-		DestinationType: "DESTINATION_BLOCKCHAIN",
-		BlockchainAddress: &model.BlockchainAddress{
-			Address: destinationAddress,
-			/* TODO: multinetwork feature flag
-			Network: &model.NetworkDetails{
-				Id:   networkId,
-				Type: networkType,
-			},
-			*/
-		},
+		PortfolioId:       params.PortfolioId,
+		SourceWalletId:    params.WalletId,
+		Amount:            params.Amount,
+		IdempotencyKey:    params.IdempotencyKey,
+		Symbol:            symbol,
+		DestinationType:   "DESTINATION_BLOCKCHAIN",
+		BlockchainAddress: blockchainAddr,
 	}
 	// Debug: Log the request structure
 	zap.L().Debug("Withdrawal request details",
@@ -216,25 +233,25 @@ func (s *Service) CreateWithdrawal(ctx context.Context, portfolioId, walletId, d
 	response, err := s.transactionsSvc.CreateWalletWithdrawal(ctx, request)
 	if err != nil {
 		zap.L().Error("Failed to create withdrawal",
-			zap.String("wallet_id", walletId),
-			zap.String("amount", amount),
-			zap.String("asset", asset),
+			zap.String("wallet_id", params.WalletId),
+			zap.String("amount", params.Amount),
+			zap.String("asset", params.Asset),
 			zap.Error(err))
 		return nil, fmt.Errorf("unable to create withdrawal: %v", err)
 	}
 
 	zap.L().Info("Withdrawal created successfully",
 		zap.String("activity_id", response.ActivityId),
-		zap.String("wallet_id", walletId),
-		zap.String("amount", amount),
-		zap.String("asset", asset))
+		zap.String("wallet_id", params.WalletId),
+		zap.String("amount", params.Amount),
+		zap.String("asset", params.Asset))
 
 	return &models.Withdrawal{
 		ActivityId:     response.ActivityId,
-		Asset:          asset,
-		Amount:         amount,
-		Destination:    destinationAddress,
-		IdempotencyKey: idempotencyKey,
+		Asset:          params.Asset,
+		Amount:         params.Amount,
+		Destination:    params.DestinationAddress,
+		IdempotencyKey: params.IdempotencyKey,
 	}, nil
 }
 

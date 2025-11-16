@@ -9,6 +9,7 @@ import (
 	"prime-send-receive-go/internal/common"
 	"prime-send-receive-go/internal/config"
 	"prime-send-receive-go/internal/models"
+	"prime-send-receive-go/internal/prime"
 
 	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
@@ -162,15 +163,14 @@ func executeWithdrawal(ctx context.Context, services *common.Services, req *with
 		zap.String("amount", req.amount.String()),
 		zap.String("destination", req.destination))
 
-	withdrawal, err := services.PrimeService.CreateWithdrawal(
-		ctx,
-		services.DefaultPortfolio.Id,
-		walletId,
-		req.destination,
-		req.amount.String(),
-		req.asset,
-		idempotencyKey,
-	)
+	withdrawal, err := services.PrimeService.CreateWithdrawal(ctx, prime.CreateWithdrawalParams{
+		PortfolioId:        services.DefaultPortfolio.Id,
+		WalletId:           walletId,
+		DestinationAddress: req.destination,
+		Amount:             req.amount.String(),
+		Asset:              req.asset,
+		IdempotencyKey:     idempotencyKey,
+	})
 	if err != nil {
 		return fmt.Errorf("Prime API withdrawal failed: %w", err)
 	}

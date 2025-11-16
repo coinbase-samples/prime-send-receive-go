@@ -8,7 +8,6 @@ import (
 
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/shopspring/decimal"
-	"go.uber.org/zap"
 )
 
 func setupTestDb(t *testing.T) (*SubledgerService, func()) {
@@ -17,8 +16,7 @@ func setupTestDb(t *testing.T) (*SubledgerService, func()) {
 		t.Fatalf("Failed to open test database: %v", err)
 	}
 
-	logger := zap.NewNop()
-	service := NewSubledgerService(db, logger)
+	service := NewSubledgerService(db)
 
 	// Use the actual schema initialization
 	if err := service.InitSchema(); err != nil {
@@ -42,7 +40,7 @@ func TestProcessTransaction_Deposit(t *testing.T) {
 	amount := decimal.NewFromFloat(1.5)
 
 	// Process deposit
-	result, err := service.ProcessTransaction(ctx, userId, asset, "deposit", amount, "tx1", "addr1", "memo1")
+	result, err := service.ProcessTransaction(ctx, ProcessTransactionParams{userId, asset, "deposit", amount, "tx1", "addr1", "memo1"})
 	if err != nil {
 		t.Fatalf("ProcessTransaction failed: %v", err)
 	}
@@ -72,14 +70,14 @@ func TestProcessTransaction_Withdrawal(t *testing.T) {
 
 	// First, make a deposit
 	depositAmount := decimal.NewFromFloat(2.0)
-	_, err := service.ProcessTransaction(ctx, userId, asset, "deposit", depositAmount, "tx1", "addr1", "")
+	_, err := service.ProcessTransaction(ctx, ProcessTransactionParams{userId, asset, "deposit", depositAmount, "tx1", "addr1", ""})
 	if err != nil {
 		t.Fatalf("Initial deposit failed: %v", err)
 	}
 
 	// Now process withdrawal (should be negative amount)
 	withdrawalAmount := decimal.NewFromFloat(-0.5)
-	result, err := service.ProcessTransaction(ctx, userId, asset, "withdrawal", withdrawalAmount, "tx2", "", "")
+	result, err := service.ProcessTransaction(ctx, ProcessTransactionParams{userId, asset, "withdrawal", withdrawalAmount, "tx2", "", ""})
 	if err != nil {
 		t.Fatalf("ProcessTransaction withdrawal failed: %v", err)
 	}
@@ -102,13 +100,13 @@ func TestProcessTransaction_DuplicateHandling(t *testing.T) {
 	txId := "duplicate-tx"
 
 	// Process transaction first time
-	_, err := service.ProcessTransaction(ctx, userId, asset, "deposit", amount, txId, "addr1", "")
+	_, err := service.ProcessTransaction(ctx, ProcessTransactionParams{userId, asset, "deposit", amount, txId, "addr1", ""})
 	if err != nil {
 		t.Fatalf("First ProcessTransaction failed: %v", err)
 	}
 
 	// Process same transaction again - should return error for duplicate
-	_, err = service.ProcessTransaction(ctx, userId, asset, "deposit", amount, txId, "addr1", "")
+	_, err = service.ProcessTransaction(ctx, ProcessTransactionParams{userId, asset, "deposit", amount, txId, "addr1", ""})
 	if err == nil {
 		t.Fatalf("Expected duplicate transaction error, got nil")
 	}
@@ -129,7 +127,7 @@ func TestProcessTransaction_NegativeBalanceAllowed(t *testing.T) {
 
 	// Process withdrawal from zero balance (should be allowed for historical transactions)
 	withdrawalAmount := decimal.NewFromFloat(-1.0)
-	result, err := service.ProcessTransaction(ctx, userId, asset, "withdrawal", withdrawalAmount, "tx1", "", "")
+	result, err := service.ProcessTransaction(ctx, ProcessTransactionParams{userId, asset, "withdrawal", withdrawalAmount, "tx1", "", ""})
 	if err != nil {
 		t.Fatalf("ProcessTransaction with negative balance failed: %v", err)
 	}

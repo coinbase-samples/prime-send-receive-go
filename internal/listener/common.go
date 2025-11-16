@@ -62,11 +62,61 @@ func NewSendReceiveListener(
 	}
 }
 
+func getUniqueAssetSymbols(assetConfigs []common.AssetConfig) map[string]bool {
+	assetSymbols := make(map[string]bool)
+	for _, assetConfig := range assetConfigs {
+		assetSymbols[assetConfig.Symbol] = true
+	}
+	return assetSymbols
+}
+
+func getUserAddresses(ctx context.Context, dbService *database.Service, userId string) ([]models.Address, error) {
+	addresses, err := dbService.GetAllUserAddresses(ctx, userId)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get addresses: %w", err)
+	}
+	return addresses, nil
+}
+
+func extractWalletsFromAddresses(addresses []models.Address, assetSymbols map[string]bool) map[string]models.WalletInfo {
+	walletMap := make(map[string]models.WalletInfo)
+	for _, addr := range addresses {
+		if assetSymbols[addr.Asset] && addr.WalletId != "" {
+			walletMap[addr.WalletId] = models.WalletInfo{
+				Id:          addr.WalletId,
+				AssetSymbol: addr.Asset,
+			}
+		}
+	}
+	return walletMap
+}
+
+func collectWalletsFromAllUsers(ctx context.Context, dbService *database.Service, users []models.User, assetSymbols map[string]bool) map[string]models.WalletInfo {
+	allWallets := make(map[string]models.WalletInfo)
+
+	for _, user := range users {
+		addresses, err := getUserAddresses(ctx, dbService, user.Id)
+		if err != nil {
+			zap.L().Error("Failed to get addresses for user",
+				zap.String("user_id", user.Id),
+				zap.Error(err))
+			continue
+		}
+
+		userWallets := extractWalletsFromAddresses(addresses, assetSymbols)
+		for walletId, wallet := range userWallets {
+			allWallets[walletId] = wallet
+		}
+	}
+
+	return allWallets
+}
+
 // LoadMonitoredWallets loads the list of trading wallets from the database
 func (d *SendReceiveListener) LoadMonitoredWallets(ctx context.Context, assetsFile string) error {
 	zap.L().Info("Loading monitored wallets from database")
 
-	// Load asset configs from file to get unique asset symbols
+	// Load asset configs from file
 	assetConfigs, err := common.LoadAssetConfig(assetsFile)
 	if err != nil {
 		return fmt.Errorf("failed to load assets from YAML: %v", err)
@@ -76,14 +126,9 @@ func (d *SendReceiveListener) LoadMonitoredWallets(ctx context.Context, assetsFi
 		zap.String("file", assetsFile),
 		zap.Int("count", len(assetConfigs)))
 
-	// Get unique asset symbols (avoid duplicate queries for same asset on different networks)
-	assetSymbols := make(map[string]bool)
-	for _, assetConfig := range assetConfigs {
-		assetSymbols[assetConfig.Symbol] = true
-	}
-
-	zap.L().Info("Unique assets to monitor",
-		zap.Int("count", len(assetSymbols)))
+	// Get unique asset symbols
+	assetSymbols := getUniqueAssetSymbols(assetConfigs)
+	zap.L().Info("Unique assets to monitor", zap.Int("count", len(assetSymbols)))
 
 	// Query all users
 	users, err := d.dbService.GetUsers(ctx)
@@ -91,31 +136,8 @@ func (d *SendReceiveListener) LoadMonitoredWallets(ctx context.Context, assetsFi
 		return fmt.Errorf("failed to get users: %v", err)
 	}
 
-	// Map to track unique wallet IDs and their asset symbols
-	walletMap := make(map[string]models.WalletInfo)
-
-	// Query addresses for each user and unique asset symbol
-	for _, user := range users {
-		for assetSymbol := range assetSymbols {
-			// Get all addresses for this user and asset (across all networks)
-			addresses, err := d.dbService.GetAllUserAddresses(ctx, user.Id)
-			if err != nil {
-				zap.L().Error("Failed to get addresses for user",
-					zap.String("user_id", user.Id),
-					zap.Error(err))
-				continue
-			}
-
-			for _, addr := range addresses {
-				if addr.Asset == assetSymbol && addr.WalletId != "" {
-					walletMap[addr.WalletId] = models.WalletInfo{
-						Id:          addr.WalletId,
-						AssetSymbol: assetSymbol,
-					}
-				}
-			}
-		}
-	}
+	// Collect wallets from all users
+	walletMap := collectWalletsFromAllUsers(ctx, d.dbService, users, assetSymbols)
 
 	// Convert map to slice
 	d.monitoredWallets = make([]models.WalletInfo, 0, len(walletMap))

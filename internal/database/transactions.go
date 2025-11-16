@@ -12,26 +12,36 @@ import (
 	"prime-send-receive-go/internal/models"
 )
 
+// ProcessTransactionParams contains the parameters for processing a transaction
+type ProcessTransactionParams struct {
+	UserId          string
+	Asset           string
+	TransactionType string
+	Amount          decimal.Decimal
+	ExternalTxId    string
+	Address         string
+	Reference       string
+}
+
 // ProcessTransaction atomically updates balance and records transaction
-func (s *SubledgerService) ProcessTransaction(ctx context.Context, userId, asset, transactionType string,
-	amount decimal.Decimal, externalTxId, address, reference string) (*models.Transaction, error) {
+func (s *SubledgerService) ProcessTransaction(ctx context.Context, params ProcessTransactionParams) (*models.Transaction, error) {
 
 	zap.L().Info("Processing transaction",
-		zap.String("user_id", userId),
-		zap.String("asset_network", asset),
-		zap.String("type", transactionType),
-		zap.String("amount", amount.String()),
-		zap.String("external_tx_id", externalTxId))
+		zap.String("user_id", params.UserId),
+		zap.String("asset_network", params.Asset),
+		zap.String("type", params.TransactionType),
+		zap.String("amount", params.Amount.String()),
+		zap.String("external_tx_id", params.ExternalTxId))
 
 	// Check for duplicate external transaction Id
-	if externalTxId != "" {
+	if params.ExternalTxId != "" {
 		var existingTxId string
-		err := s.db.QueryRowContext(ctx, queryCheckDuplicateTransaction, externalTxId).Scan(&existingTxId)
+		err := s.db.QueryRowContext(ctx, queryCheckDuplicateTransaction, params.ExternalTxId).Scan(&existingTxId)
 		if err == nil {
 			zap.L().Warn("Duplicate external transaction Id detected, skipping",
-				zap.String("external_tx_id", externalTxId),
+				zap.String("external_tx_id", params.ExternalTxId),
 				zap.String("existing_internal_tx_id", existingTxId))
-			return nil, fmt.Errorf("duplicate transaction: external_transaction_id %s already exists", externalTxId)
+			return nil, fmt.Errorf("duplicate transaction: external_transaction_id %s already exists", params.ExternalTxId)
 		} else if err != sql.ErrNoRows {
 			return nil, fmt.Errorf("failed to check for duplicate transaction: %v", err)
 		}
@@ -49,7 +59,7 @@ func (s *SubledgerService) ProcessTransaction(ctx context.Context, userId, asset
 	var accountId string
 	var version int64
 
-	err = tx.QueryRowContext(ctx, queryGetAccountBalance, userId, asset).Scan(&accountId, &currentBalanceStr, &version)
+	err = tx.QueryRowContext(ctx, queryGetAccountBalance, params.UserId, params.Asset).Scan(&accountId, &currentBalanceStr, &version)
 
 	var currentBalance decimal.Decimal
 	if err == sql.ErrNoRows {
@@ -58,7 +68,7 @@ func (s *SubledgerService) ProcessTransaction(ctx context.Context, userId, asset
 		currentBalance = decimal.Zero
 		version = 1
 
-		_, err = tx.ExecContext(ctx, queryInsertAccountBalance, accountId, userId, asset, "0", 1)
+		_, err = tx.ExecContext(ctx, queryInsertAccountBalance, accountId, params.UserId, params.Asset, "0", 1)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create account balance: %v", err)
 		}
@@ -72,7 +82,7 @@ func (s *SubledgerService) ProcessTransaction(ctx context.Context, userId, asset
 	}
 
 	// Calculate new balance
-	newBalance := currentBalance.Add(amount)
+	newBalance := currentBalance.Add(params.Amount)
 
 	// Create transaction record
 	transactionId := uuid.New().String()
@@ -81,9 +91,9 @@ func (s *SubledgerService) ProcessTransaction(ctx context.Context, userId, asset
 
 	var amountStr, balanceBeforeStr, balanceAfterStr string
 	err = tx.QueryRowContext(ctx, queryInsertTransaction,
-		transactionId, userId, asset, transactionType,
-		amount.String(), currentBalance.String(), newBalance.String(),
-		externalTxId, address, reference, "confirmed", now, now).
+		transactionId, params.UserId, params.Asset, params.TransactionType,
+		params.Amount.String(), currentBalance.String(), newBalance.String(),
+		params.ExternalTxId, params.Address, params.Reference, "confirmed", now, now).
 		Scan(&transaction.Id, &transaction.UserId, &transaction.Asset, &transaction.TransactionType,
 			&amountStr, &balanceBeforeStr, &balanceAfterStr,
 			&transaction.ExternalTransactionId, &transaction.Address, &transaction.Reference,
@@ -106,7 +116,7 @@ func (s *SubledgerService) ProcessTransaction(ctx context.Context, userId, asset
 	}
 
 	// Update account balance (with optimistic locking)
-	result, err := tx.ExecContext(ctx, queryUpdateAccountBalance, newBalance.String(), transactionId, userId, asset, version)
+	result, err := tx.ExecContext(ctx, queryUpdateAccountBalance, newBalance.String(), transactionId, params.UserId, params.Asset, version)
 	if err != nil {
 		return nil, fmt.Errorf("failed to update balance: %v", err)
 	}
@@ -131,8 +141,8 @@ func (s *SubledgerService) ProcessTransaction(ctx context.Context, userId, asset
 
 	zap.L().Info("Transaction processed successfully",
 		zap.String("transaction_id", transactionId),
-		zap.String("user_id", userId),
-		zap.String("asset_network", asset),
+		zap.String("user_id", params.UserId),
+		zap.String("asset_network", params.Asset),
 		zap.String("old_balance", currentBalance.String()),
 		zap.String("new_balance", newBalance.String()))
 
