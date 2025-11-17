@@ -17,6 +17,6 @@ require (
 	github.com/gorilla/websocket v1.5.3 // indirect
 	github.com/mattn/go-sqlite3 v1.14.22
 	github.com/shopspring/decimal v1.4.0
-	golang.org/x/net v0.30.0
+	golang.org/x/net v0.38.0
 	golang.org/x/text v0.24.0 // indirect
 )
