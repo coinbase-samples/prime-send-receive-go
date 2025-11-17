@@ -2,6 +2,14 @@ package database
 
 import (
 	"database/sql"
+	"errors"
+)
+
+// Sentinel errors for database operations
+var (
+	ErrDuplicateTransaction   = errors.New("duplicate transaction")
+	ErrConcurrentModification = errors.New("concurrent modification detected")
+	ErrUserNotFound           = errors.New("no user found for address")
 )
 
 // SubledgerService handles subledger operations

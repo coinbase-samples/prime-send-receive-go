@@ -2,12 +2,14 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"strings"
 
 	"prime-send-receive-go/internal/common"
 	"prime-send-receive-go/internal/config"
+	"prime-send-receive-go/internal/database"
 	"prime-send-receive-go/internal/models"
 	"prime-send-receive-go/internal/prime"
 
@@ -142,10 +144,10 @@ func reserveFunds(ctx context.Context, services *common.Services, userId, symbol
 
 	err := services.DbService.ProcessWithdrawal(ctx, userId, symbol, amount, idempotencyKey)
 	if err != nil {
-		if strings.Contains(err.Error(), "concurrent modification") {
+		if errors.Is(err, database.ErrConcurrentModification) {
 			return fmt.Errorf("balance was modified by another withdrawal - please retry")
 		}
-		if strings.Contains(err.Error(), "duplicate transaction") {
+		if errors.Is(err, database.ErrDuplicateTransaction) {
 			return fmt.Errorf("withdrawal with this idempotency key is already being processed - please retry in a moment")
 		}
 		return fmt.Errorf("failed to debit balance: %w", err)

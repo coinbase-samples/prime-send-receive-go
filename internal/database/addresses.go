@@ -39,7 +39,7 @@ func (s *Service) StoreAddress(ctx context.Context, params StoreAddressParams) (
 			zap.String("user_id", params.UserId),
 			zap.String("asset", params.Asset),
 			zap.Error(err))
-		return nil, fmt.Errorf("unable to insert address: %v", err)
+		return nil, fmt.Errorf("unable to insert address: %w", err)
 	}
 
 	zap.L().Info("Address stored successfully", zap.String("id", addressId))
@@ -59,7 +59,7 @@ func (s *Service) GetAddresses(ctx context.Context, userId string, asset string,
 			zap.String("asset", asset),
 			zap.String("network", network),
 			zap.Error(err))
-		return nil, fmt.Errorf("unable to query addresses: %v", err)
+		return nil, fmt.Errorf("unable to query addresses: %w", err)
 	}
 	defer func(rows *sql.Rows) {
 		if err := rows.Close(); err != nil {
@@ -73,7 +73,7 @@ func (s *Service) GetAddresses(ctx context.Context, userId string, asset string,
 		err := rows.Scan(&addr.Id, &addr.UserId, &addr.Asset, &addr.Network, &addr.Address, &addr.WalletId, &addr.AccountIdentifier, &addr.CreatedAt)
 		if err != nil {
 			zap.L().Error("Failed to scan address row", zap.Error(err))
-			return nil, fmt.Errorf("unable to scan address row: %v", err)
+			return nil, fmt.Errorf("unable to scan address row: %w", err)
 		}
 		addresses = append(addresses, addr)
 	}
@@ -81,7 +81,7 @@ func (s *Service) GetAddresses(ctx context.Context, userId string, asset string,
 	// Check for errors during iteration
 	if err := rows.Err(); err != nil {
 		zap.L().Error("Error during address row iteration", zap.Error(err))
-		return nil, fmt.Errorf("error iterating address rows: %v", err)
+		return nil, fmt.Errorf("error iterating address rows: %w", err)
 	}
 
 	zap.L().Debug("Retrieved addresses",
@@ -100,7 +100,7 @@ func (s *Service) GetAllUserAddresses(ctx context.Context, userId string) ([]mod
 		zap.L().Error("Failed to query all addresses",
 			zap.String("user_id", userId),
 			zap.Error(err))
-		return nil, fmt.Errorf("unable to query all addresses: %v", err)
+		return nil, fmt.Errorf("unable to query all addresses: %w", err)
 	}
 	defer func(rows *sql.Rows) {
 		if err := rows.Close(); err != nil {
@@ -114,7 +114,7 @@ func (s *Service) GetAllUserAddresses(ctx context.Context, userId string) ([]mod
 		err := rows.Scan(&addr.Id, &addr.UserId, &addr.Asset, &addr.Network, &addr.Address, &addr.WalletId, &addr.AccountIdentifier, &addr.CreatedAt)
 		if err != nil {
 			zap.L().Error("Failed to scan address row", zap.Error(err))
-			return nil, fmt.Errorf("unable to scan address row: %v", err)
+			return nil, fmt.Errorf("unable to scan address row: %w", err)
 		}
 		addresses = append(addresses, addr)
 	}
@@ -122,7 +122,7 @@ func (s *Service) GetAllUserAddresses(ctx context.Context, userId string) ([]mod
 	// Check for errors during iteration
 	if err := rows.Err(); err != nil {
 		zap.L().Error("Error during address row iteration", zap.Error(err))
-		return nil, fmt.Errorf("error iterating address rows: %v", err)
+		return nil, fmt.Errorf("error iterating address rows: %w", err)
 	}
 
 	zap.L().Debug("Retrieved all addresses",
@@ -148,7 +148,7 @@ func (s *Service) FindUserByAddress(ctx context.Context, address string) (*model
 
 	if err != nil {
 		zap.L().Error("Failed to query user by address", zap.String("address", address), zap.Error(err))
-		return nil, nil, fmt.Errorf("unable to query user by address: %v", err)
+		return nil, nil, fmt.Errorf("unable to query user by address: %w", err)
 	}
 
 	zap.L().Debug("Found user by address",

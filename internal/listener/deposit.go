@@ -2,12 +2,14 @@ package listener
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
 
 	"github.com/shopspring/decimal"
 	"go.uber.org/zap"
+	"prime-send-receive-go/internal/database"
 	"prime-send-receive-go/internal/models"
 )
 
@@ -25,7 +27,7 @@ func (d *SendReceiveListener) processDeposit(ctx context.Context, tx models.Prim
 
 	amount, err := decimal.NewFromString(tx.Amount)
 	if err != nil {
-		return fmt.Errorf("invalid amount: %v", err)
+		return fmt.Errorf("invalid amount: %w", err)
 	}
 
 	if amount.LessThanOrEqual(decimal.Zero) {
@@ -76,13 +78,13 @@ func (d *SendReceiveListener) processDeposit(ctx context.Context, tx models.Prim
 	// This handles cases where Prime API returns "BASEUSDC" but we store as "USDC" with network="base-mainnet"
 	result, err := d.apiService.ProcessDeposit(ctx, lookupAddress, tx.Symbol, amount, tx.Id)
 	if err != nil {
-		if strings.Contains(err.Error(), "duplicate transaction") {
+		if errors.Is(err, database.ErrDuplicateTransaction) {
 			zap.L().Info("Duplicate transaction detected - already processed, marking as handled",
 				zap.String("transaction_id", tx.Id))
 			d.markTransactionProcessed(tx.Id)
 			return nil
 		}
-		if strings.Contains(err.Error(), "no user found for address") {
+		if errors.Is(err, database.ErrUserNotFound) {
 			zap.L().Warn("Deposit to unrecognized address - marking as processed to avoid repeated errors",
 				zap.String("transaction_id", tx.Id),
 				zap.String("address", lookupAddress),
@@ -91,19 +93,19 @@ func (d *SendReceiveListener) processDeposit(ctx context.Context, tx models.Prim
 			d.markTransactionProcessed(tx.Id)
 			return nil
 		}
-		return fmt.Errorf("failed to process deposit: %v", err)
+		return fmt.Errorf("failed to process deposit: %w", err)
 	}
 
 	if !result.Success {
-		// Check if this is a duplicate transaction error
-		if strings.Contains(result.Error, "duplicate transaction") {
+		// Check if this is a duplicate transaction error (result.Error is a plain string)
+		if result.Error == database.ErrDuplicateTransaction.Error() {
 			zap.L().Info("Duplicate transaction detected - already processed, marking as handled",
 				zap.String("transaction_id", tx.Id))
 			d.markTransactionProcessed(tx.Id)
 			return nil
 		}
 		// Check if this is an unrecognized address
-		if strings.Contains(result.Error, "no user found for address") {
+		if result.Error == database.ErrUserNotFound.Error() {
 			zap.L().Warn("Deposit to unrecognized address - marking as processed to avoid repeated errors",
 				zap.String("transaction_id", tx.Id),
 				zap.String("error", result.Error))

@@ -2,9 +2,10 @@ package api
 
 import (
 	"context"
-	"strings"
+	"errors"
 
 	"github.com/shopspring/decimal"
+	"prime-send-receive-go/internal/database"
 	"prime-send-receive-go/internal/models"
 
 	"go.uber.org/zap"
@@ -26,7 +27,7 @@ func (s *LedgerService) ProcessWithdrawal(ctx context.Context, userId, asset str
 
 	err := s.db.ProcessWithdrawal(ctx, userId, asset, amount, externalTxId)
 	if err != nil {
-		if strings.Contains(err.Error(), "duplicate transaction") {
+		if errors.Is(err, database.ErrDuplicateTransaction) {
 			zap.L().Info("Duplicate withdrawal detected in API service",
 				zap.String("user_id", userId),
 				zap.String("asset_network", asset),
@@ -46,7 +47,7 @@ func (s *LedgerService) ProcessWithdrawal(ctx context.Context, userId, asset str
 		}, nil
 	}
 
-	users, err := s.db.GetUsers(ctx)
+	user, err := s.db.GetUserById(ctx, userId)
 	if err != nil {
 		zap.L().Error("User lookup failed after withdrawal processing",
 			zap.String("user_id", userId),
@@ -54,23 +55,6 @@ func (s *LedgerService) ProcessWithdrawal(ctx context.Context, userId, asset str
 		return &models.DepositResult{
 			Success: false,
 			Error:   "user lookup failed after withdrawal processing",
-		}, nil
-	}
-
-	var user *models.User
-	for _, u := range users {
-		if u.Id == userId {
-			user = &u
-			break
-		}
-	}
-
-	if user == nil {
-		zap.L().Error("User not found after withdrawal processing",
-			zap.String("user_id", userId))
-		return &models.DepositResult{
-			Success: false,
-			Error:   "user not found after withdrawal processing",
 		}, nil
 	}
 
@@ -119,7 +103,7 @@ func (s *LedgerService) CreditBackFailedWithdrawal(ctx context.Context, userId, 
 
 	err := s.db.ReverseWithdrawal(ctx, userId, asset, amount, originalTxId)
 	if err != nil {
-		if strings.Contains(err.Error(), "duplicate transaction") {
+		if errors.Is(err, database.ErrDuplicateTransaction) {
 			zap.L().Info("Duplicate credit-back detected in API service",
 				zap.String("user_id", userId),
 				zap.String("asset_network", asset),

@@ -17,7 +17,7 @@ func (s *Service) GetUsers(ctx context.Context) ([]models.User, error) {
 	rows, err := s.db.QueryContext(ctx, queryGetActiveUsers)
 	if err != nil {
 		zap.L().Error("Failed to query users", zap.Error(err))
-		return nil, fmt.Errorf("unable to query users: %v", err)
+		return nil, fmt.Errorf("unable to query users: %w", err)
 	}
 	defer func(rows *sql.Rows) {
 		if err := rows.Close(); err != nil {
@@ -31,7 +31,7 @@ func (s *Service) GetUsers(ctx context.Context) ([]models.User, error) {
 		err := rows.Scan(&user.Id, &user.Name, &user.Email, &user.CreatedAt, &user.UpdatedAt)
 		if err != nil {
 			zap.L().Error("Failed to scan user row", zap.Error(err))
-			return nil, fmt.Errorf("unable to scan user row: %v", err)
+			return nil, fmt.Errorf("unable to scan user row: %w", err)
 		}
 
 		users = append(users, user)
@@ -40,7 +40,7 @@ func (s *Service) GetUsers(ctx context.Context) ([]models.User, error) {
 	// Check for errors during iteration
 	if err := rows.Err(); err != nil {
 		zap.L().Error("Error during user row iteration", zap.Error(err))
-		return nil, fmt.Errorf("error iterating user rows: %v", err)
+		return nil, fmt.Errorf("error iterating user rows: %w", err)
 	}
 
 	zap.L().Info("Retrieved users", zap.Int("count", len(users)))
@@ -58,7 +58,7 @@ func (s *Service) GetUserById(ctx context.Context, userId string) (*models.User,
 			return nil, fmt.Errorf("user not found: %s", userId)
 		}
 		zap.L().Error("Failed to query user by ID", zap.String("user_id", userId), zap.Error(err))
-		return nil, fmt.Errorf("unable to query user by ID: %v", err)
+		return nil, fmt.Errorf("unable to query user by ID: %w", err)
 	}
 
 	zap.L().Debug("Retrieved user by ID", zap.String("user_id", userId), zap.String("name", user.Name))
@@ -76,7 +76,7 @@ func (s *Service) GetUserByEmail(ctx context.Context, email string) (*models.Use
 			return nil, fmt.Errorf("user not found: %s", email)
 		}
 		zap.L().Error("Failed to query user by email", zap.String("email", email), zap.Error(err))
-		return nil, fmt.Errorf("unable to query user by email: %v", err)
+		return nil, fmt.Errorf("unable to query user by email: %w", err)
 	}
 
 	zap.L().Debug("Retrieved user by email", zap.String("email", email), zap.String("name", user.Name))
@@ -89,13 +89,13 @@ func (s *Service) CreateUser(ctx context.Context, userId, name, email string) (*
 	result, err := s.db.ExecContext(ctx, queryInsertUser, userId, name, email)
 	if err != nil {
 		zap.L().Error("Failed to insert user", zap.String("email", email), zap.Error(err))
-		return nil, fmt.Errorf("unable to insert user: %v", err)
+		return nil, fmt.Errorf("unable to insert user: %w", err)
 	}
 
 	rowsAffected, err := result.RowsAffected()
 	if err != nil {
 		zap.L().Error("Failed to get rows affected", zap.Error(err))
-		return nil, fmt.Errorf("unable to get rows affected: %v", err)
+		return nil, fmt.Errorf("unable to get rows affected: %w", err)
 	}
 
 	if rowsAffected == 0 {

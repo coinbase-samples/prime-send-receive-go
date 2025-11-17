@@ -38,15 +38,15 @@ func main() {
 
 	apiService := api.NewLedgerService(services.DbService)
 
-	sendReceiveListener := listener.NewSendReceiveListener(
-		services.PrimeService,
-		apiService,
-		services.DbService,
-		services.DefaultPortfolio.Id,
-		cfg.Listener.LookbackWindow,
-		cfg.Listener.PollingInterval,
-		cfg.Listener.CleanupInterval,
-	)
+	sendReceiveListener := listener.NewSendReceiveListener(listener.SendReceiveListenerConfig{
+		PrimeService:    services.PrimeService,
+		ApiService:      apiService,
+		DbService:       services.DbService,
+		PortfolioId:     services.DefaultPortfolio.Id,
+		LookbackWindow:  cfg.Listener.LookbackWindow,
+		PollingInterval: cfg.Listener.PollingInterval,
+		CleanupInterval: cfg.Listener.CleanupInterval,
+	})
 
 	if err := sendReceiveListener.Start(ctx, cfg.Listener.AssetsFile); err != nil {
 		zap.L().Fatal("Failed to start send/receive listener", zap.Error(err))

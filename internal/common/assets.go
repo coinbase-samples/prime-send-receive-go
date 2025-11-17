@@ -24,19 +24,19 @@ func LoadAssetConfig(assetsFile string) ([]AssetConfig, error) {
 	} else {
 		wd, err := os.Getwd()
 		if err != nil {
-			return nil, fmt.Errorf("failed to get working directory: %v", err)
+			return nil, fmt.Errorf("failed to get working directory: %w", err)
 		}
 		assetsPath = filepath.Join(wd, assetsFile)
 	}
 
 	data, err := os.ReadFile(assetsPath)
 	if err != nil {
-		return nil, fmt.Errorf("unable to read %s: %v", assetsFile, err)
+		return nil, fmt.Errorf("unable to read %s: %w", assetsFile, err)
 	}
 
 	var config AssetsConfig
 	if err := yaml.Unmarshal(data, &config); err != nil {
-		return nil, fmt.Errorf("unable to parse %s: %v", assetsFile, err)
+		return nil, fmt.Errorf("unable to parse %s: %w", assetsFile, err)
 	}
 
 	for i, asset := range config.Assets {

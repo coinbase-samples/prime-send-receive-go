@@ -21,7 +21,7 @@ func NewLedgerService(db *database.Service) *LedgerService {
 func (s *LedgerService) HealthCheck(ctx context.Context) error {
 	_, err := s.db.GetUsers(ctx)
 	if err != nil {
-		return fmt.Errorf("database health check failed: %v", err)
+		return fmt.Errorf("database health check failed: %w", err)
 	}
 	return nil
 }

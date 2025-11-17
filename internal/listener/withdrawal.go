@@ -2,12 +2,14 @@ package listener
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
 
 	"github.com/shopspring/decimal"
 	"go.uber.org/zap"
+	"prime-send-receive-go/internal/database"
 	"prime-send-receive-go/internal/models"
 )
 
@@ -44,7 +46,7 @@ func (d *SendReceiveListener) processWithdrawal(ctx context.Context, tx models.P
 
 	amount, err := decimal.NewFromString(tx.Amount)
 	if err != nil {
-		return fmt.Errorf("invalid amount: %v", err)
+		return fmt.Errorf("invalid amount: %w", err)
 	}
 
 	if amount.LessThan(decimal.Zero) {
@@ -68,6 +70,10 @@ func (d *SendReceiveListener) processWithdrawal(ctx context.Context, tx models.P
 		return nil
 	}
 
+	// Normalize symbol: Prime API returns network-specific symbols like "BASEUSDC" or "USDC"
+	// We need canonical symbol "USDC" for consistent balance tracking across networks
+	canonicalSymbol := normalizeSymbol(tx.Symbol)
+
 	assetNetwork := fmt.Sprintf("%s-%s", tx.Symbol, tx.Network)
 	assetNetwork = strings.TrimSuffix(assetNetwork, "-")
 
@@ -75,7 +81,8 @@ func (d *SendReceiveListener) processWithdrawal(ctx context.Context, tx models.P
 		zap.String("transaction_id", tx.Id),
 		zap.String("user_id", userId),
 		zap.String("idempotency_key", tx.IdempotencyKey),
-		zap.String("asset_symbol", tx.Symbol),
+		zap.String("prime_api_symbol", tx.Symbol),
+		zap.String("canonical_symbol", canonicalSymbol),
 		zap.String("network", tx.Network),
 		zap.String("asset_network", assetNetwork),
 		zap.String("amount", amount.String()),
@@ -85,9 +92,9 @@ func (d *SendReceiveListener) processWithdrawal(ctx context.Context, tx models.P
 	// Check if this withdrawal was already processed by the withdrawal CLI
 	// The CLI uses idempotency key as the transaction ID when debiting
 	// First try with idempotency key to see if it already exists
-	result, err := d.apiService.ProcessWithdrawal(ctx, userId, tx.Symbol, amount, tx.IdempotencyKey)
+	result, err := d.apiService.ProcessWithdrawal(ctx, userId, canonicalSymbol, amount, tx.IdempotencyKey)
 	if err != nil {
-		if strings.Contains(err.Error(), "duplicate transaction") {
+		if errors.Is(err, database.ErrDuplicateTransaction) {
 			d.markTransactionProcessed(tx.Id)
 			return nil
 		}
@@ -95,13 +102,13 @@ func (d *SendReceiveListener) processWithdrawal(ctx context.Context, tx models.P
 			zap.String("idempotency_key", tx.IdempotencyKey),
 			zap.String("prime_tx_id", tx.Id))
 
-		result, err = d.apiService.ProcessWithdrawal(ctx, userId, tx.Symbol, amount, tx.Id)
+		result, err = d.apiService.ProcessWithdrawal(ctx, userId, canonicalSymbol, amount, tx.Id)
 		if err != nil {
-			if strings.Contains(err.Error(), "duplicate transaction") {
+			if errors.Is(err, database.ErrDuplicateTransaction) {
 				d.markTransactionProcessed(tx.Id)
 				return nil
 			}
-			return fmt.Errorf("failed to process withdrawal: %v", err)
+			return fmt.Errorf("failed to process withdrawal: %w", err)
 		}
 	}
 
@@ -133,7 +140,7 @@ func (d *SendReceiveListener) processWithdrawal(ctx context.Context, tx models.P
 func (d *SendReceiveListener) handleFailedWithdrawal(ctx context.Context, tx models.PrimeTransaction, wallet models.WalletInfo) error {
 	amount, err := decimal.NewFromString(tx.Amount)
 	if err != nil {
-		return fmt.Errorf("invalid amount: %v", err)
+		return fmt.Errorf("invalid amount: %w", err)
 	}
 
 	if amount.LessThan(decimal.Zero) {
@@ -158,20 +165,25 @@ func (d *SendReceiveListener) handleFailedWithdrawal(ctx context.Context, tx mod
 		return nil
 	}
 
+	// Normalize symbol: Prime API returns network-specific symbols like "BASEUSDC" or "USDC"
+	// We need canonical symbol "USDC" for consistent balance tracking across networks
+	canonicalSymbol := normalizeSymbol(tx.Symbol)
+
 	zap.L().Info("Processing failed withdrawal - crediting back to user",
 		zap.String("transaction_id", tx.Id),
 		zap.String("user_id", userId),
 		zap.String("idempotency_key", tx.IdempotencyKey),
 		zap.String("status", tx.Status),
-		zap.String("asset_symbol", tx.Symbol),
+		zap.String("prime_api_symbol", tx.Symbol),
+		zap.String("canonical_symbol", canonicalSymbol),
 		zap.String("amount", amount.String()),
 		zap.Time("created_at", tx.CreatedAt))
 
 	// Credit back the amount (deposit to reverse the failed withdrawal)
 	// Use idempotency key as original transaction ID for tracking
-	result, err := d.apiService.CreditBackFailedWithdrawal(ctx, userId, tx.Symbol, amount, tx.IdempotencyKey)
+	result, err := d.apiService.CreditBackFailedWithdrawal(ctx, userId, canonicalSymbol, amount, tx.IdempotencyKey)
 	if err != nil {
-		return fmt.Errorf("failed to credit back failed withdrawal: %v", err)
+		return fmt.Errorf("failed to credit back failed withdrawal: %w", err)
 	}
 
 	if !result.Success {
@@ -199,4 +211,25 @@ func (d *SendReceiveListener) handleFailedWithdrawal(ctx context.Context, tx mod
 		zap.Time("processed_at", time.Now()))
 
 	return nil
+}
+
+// symbolMapping maps Prime API's network-specific symbols to canonical symbols
+var symbolMapping = map[string]string{
+	// USDC variants (canonical + network-specific)
+	"USDC":     "USDC",
+	"SPLUSDC":  "USDC",
+	"AVAUSDC":  "USDC",
+	"ARBUSDC":  "USDC",
+	"BASEUSDC": "USDC",
+
+	// ETH variants
+	"ETH":     "ETH",
+	"BASEETH": "ETH",
+}
+
+func normalizeSymbol(symbol string) string {
+	if canonical, ok := symbolMapping[symbol]; ok {
+		return canonical
+	}
+	return symbol
 }

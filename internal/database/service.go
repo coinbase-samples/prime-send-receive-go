@@ -20,10 +20,24 @@ type Service struct {
 }
 
 func NewService(ctx context.Context, cfg models.DatabaseConfig) (*Service, error) {
+	// Validate configuration
+	if cfg.Path == "" {
+		return nil, fmt.Errorf("database path cannot be empty")
+	}
+	if cfg.MaxOpenConns <= 0 {
+		return nil, fmt.Errorf("max open connections must be positive, got %d", cfg.MaxOpenConns)
+	}
+	if cfg.MaxIdleConns < 0 {
+		return nil, fmt.Errorf("max idle connections cannot be negative, got %d", cfg.MaxIdleConns)
+	}
+	if cfg.PingTimeout <= 0 {
+		return nil, fmt.Errorf("ping timeout must be positive, got %v", cfg.PingTimeout)
+	}
+
 	zap.L().Info("Opening SQLite database", zap.String("file", cfg.Path))
 	db, err := sql.Open("sqlite3", cfg.Path+"?_journal_mode=WAL&_synchronous=NORMAL&_cache_size=1000")
 	if err != nil {
-		return nil, fmt.Errorf("unable to open database: %v", err)
+		return nil, fmt.Errorf("unable to open database: %w", err)
 	}
 
 	// Set connection timeouts and limits
@@ -40,7 +54,7 @@ func NewService(ctx context.Context, cfg models.DatabaseConfig) (*Service, error
 		if err != nil {
 			return nil, err
 		}
-		return nil, fmt.Errorf("unable to ping database: %v", err)
+		return nil, fmt.Errorf("unable to ping database: %w", err)
 	}
 
 	subledger := NewSubledgerService(db)
@@ -50,7 +64,7 @@ func NewService(ctx context.Context, cfg models.DatabaseConfig) (*Service, error
 		if err != nil {
 			return nil, err
 		}
-		return nil, fmt.Errorf("unable to initialize schema: %v", err)
+		return nil, fmt.Errorf("unable to initialize schema: %w", err)
 	}
 
 	// Initialize subledger schema
@@ -59,7 +73,7 @@ func NewService(ctx context.Context, cfg models.DatabaseConfig) (*Service, error
 		if err != nil {
 			return nil, err
 		}
-		return nil, fmt.Errorf("unable to initialize subledger schema: %v", err)
+		return nil, fmt.Errorf("unable to initialize subledger schema: %w", err)
 	}
 
 	zap.L().Info("Database service initialized successfully")
@@ -67,9 +81,8 @@ func NewService(ctx context.Context, cfg models.DatabaseConfig) (*Service, error
 }
 
 func (s *Service) Close() {
-	err := s.db.Close()
-	if err != nil {
-		return
+	if err := s.db.Close(); err != nil {
+		zap.L().Warn("Failed to close database connection", zap.Error(err))
 	}
 }
 
@@ -160,7 +173,7 @@ func (s *Service) ProcessDeposit(ctx context.Context, address, asset string, amo
 	// Find user by address
 	user, addr, err := s.FindUserByAddress(ctx, address)
 	if err != nil {
-		return fmt.Errorf("error finding user by address: %v", err)
+		return fmt.Errorf("error finding user by address: %w", err)
 	}
 
 	if user == nil {
@@ -190,7 +203,7 @@ func (s *Service) ProcessDeposit(ctx context.Context, address, asset string, amo
 		Reference:       "",
 	})
 	if err != nil {
-		return fmt.Errorf("error processing deposit transaction: %v", err)
+		return fmt.Errorf("error processing deposit transaction: %w", err)
 	}
 
 	zap.L().Info("Deposit processed successfully",
@@ -208,13 +221,13 @@ func (s *Service) ProcessWithdrawal(ctx context.Context, userId, asset string, a
 	user, err := s.GetUserById(ctx, userId)
 	if err != nil {
 		zap.L().Warn("Withdrawal for unknown user", zap.String("user_id", userId))
-		return fmt.Errorf("error getting user: %v", err)
+		return fmt.Errorf("error getting user: %w", err)
 	}
 
 	// Get current balance for logging purposes (no validation for historical transactions)
 	currentBalance, err := s.GetUserBalance(ctx, userId, asset)
 	if err != nil {
-		return fmt.Errorf("error getting current balance: %v", err)
+		return fmt.Errorf("error getting current balance: %w", err)
 	}
 
 	zap.L().Info("Processing withdrawal information",
@@ -233,7 +246,7 @@ func (s *Service) ProcessWithdrawal(ctx context.Context, userId, asset string, a
 		Reference:       "",
 	})
 	if err != nil {
-		return fmt.Errorf("error processing withdrawal transaction: %v", err)
+		return fmt.Errorf("error processing withdrawal transaction: %w", err)
 	}
 
 	zap.L().Info("Withdrawal processed successfully",
@@ -279,7 +292,7 @@ func (s *Service) ReverseWithdrawal(ctx context.Context, userId, asset string, a
 		Reference:       "Reversal of failed withdrawal",
 	})
 	if err != nil {
-		return fmt.Errorf("error reversing withdrawal: %v", err)
+		return fmt.Errorf("error reversing withdrawal: %w", err)
 	}
 
 	zap.L().Info("Withdrawal reversed successfully",

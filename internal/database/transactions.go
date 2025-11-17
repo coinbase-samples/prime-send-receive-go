@@ -41,16 +41,16 @@ func (s *SubledgerService) ProcessTransaction(ctx context.Context, params Proces
 			zap.L().Warn("Duplicate external transaction Id detected, skipping",
 				zap.String("external_tx_id", params.ExternalTxId),
 				zap.String("existing_internal_tx_id", existingTxId))
-			return nil, fmt.Errorf("duplicate transaction: external_transaction_id %s already exists", params.ExternalTxId)
+			return nil, fmt.Errorf("%w: external_transaction_id %s already exists", ErrDuplicateTransaction, params.ExternalTxId)
 		} else if err != sql.ErrNoRows {
-			return nil, fmt.Errorf("failed to check for duplicate transaction: %v", err)
+			return nil, fmt.Errorf("failed to check for duplicate transaction: %w", err)
 		}
 	}
 
 	// Start database transaction for atomicity
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to begin transaction: %v", err)
+		return nil, fmt.Errorf("failed to begin transaction: %w", err)
 	}
 	defer tx.Rollback()
 
@@ -70,14 +70,14 @@ func (s *SubledgerService) ProcessTransaction(ctx context.Context, params Proces
 
 		_, err = tx.ExecContext(ctx, queryInsertAccountBalance, accountId, params.UserId, params.Asset, "0", 1)
 		if err != nil {
-			return nil, fmt.Errorf("failed to create account balance: %v", err)
+			return nil, fmt.Errorf("failed to create account balance: %w", err)
 		}
 	} else if err != nil {
-		return nil, fmt.Errorf("failed to get current balance: %v", err)
+		return nil, fmt.Errorf("failed to get current balance: %w", err)
 	} else {
 		currentBalance, err = decimal.NewFromString(currentBalanceStr)
 		if err != nil {
-			return nil, fmt.Errorf("failed to parse current balance '%s': %v", currentBalanceStr, err)
+			return nil, fmt.Errorf("failed to parse current balance '%s': %w", currentBalanceStr, err)
 		}
 	}
 
@@ -99,44 +99,44 @@ func (s *SubledgerService) ProcessTransaction(ctx context.Context, params Proces
 			&transaction.ExternalTransactionId, &transaction.Address, &transaction.Reference,
 			&transaction.Status, &transaction.CreatedAt, &transaction.ProcessedAt)
 	if err != nil {
-		return nil, fmt.Errorf("failed to insert transaction: %v", err)
+		return nil, fmt.Errorf("failed to insert transaction: %w", err)
 	}
 
 	transaction.Amount, err = decimal.NewFromString(amountStr)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse returned amount: %v", err)
+		return nil, fmt.Errorf("failed to parse returned amount: %w", err)
 	}
 	transaction.BalanceBefore, err = decimal.NewFromString(balanceBeforeStr)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse returned balance_before: %v", err)
+		return nil, fmt.Errorf("failed to parse returned balance_before: %w", err)
 	}
 	transaction.BalanceAfter, err = decimal.NewFromString(balanceAfterStr)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse returned balance_after: %v", err)
+		return nil, fmt.Errorf("failed to parse returned balance_after: %w", err)
 	}
 
 	// Update account balance (with optimistic locking)
 	result, err := tx.ExecContext(ctx, queryUpdateAccountBalance, newBalance.String(), transactionId, params.UserId, params.Asset, version)
 	if err != nil {
-		return nil, fmt.Errorf("failed to update balance: %v", err)
+		return nil, fmt.Errorf("failed to update balance: %w", err)
 	}
 
 	rowsAffected, err := result.RowsAffected()
 	if err != nil {
-		return nil, fmt.Errorf("failed to check rows affected: %v", err)
+		return nil, fmt.Errorf("failed to check rows affected: %w", err)
 	}
 	if rowsAffected == 0 {
-		return nil, fmt.Errorf("balance update failed - concurrent modification detected")
+		return nil, fmt.Errorf("balance update failed - %w", ErrConcurrentModification)
 	}
 
 	// Optional: Add double-entry journal entries
 	if err := s.addJournalEntries(ctx, tx, transaction); err != nil {
-		return nil, fmt.Errorf("failed to add journal entries: %v", err)
+		return nil, fmt.Errorf("failed to add journal entries: %w", err)
 	}
 
 	// Commit transaction
 	if err := tx.Commit(); err != nil {
-		return nil, fmt.Errorf("failed to commit transaction: %v", err)
+		return nil, fmt.Errorf("failed to commit transaction: %w", err)
 	}
 
 	zap.L().Info("Transaction processed successfully",
@@ -219,7 +219,7 @@ func (s *SubledgerService) GetTransactionHistory(ctx context.Context, userId, as
 
 	rows, err := s.db.QueryContext(ctx, queryGetTransactionHistory, userId, asset, limit, offset)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get transaction history: %v", err)
+		return nil, fmt.Errorf("failed to get transaction history: %w", err)
 	}
 	defer func(rows *sql.Rows) {
 		if err := rows.Close(); err != nil {
@@ -236,22 +236,22 @@ func (s *SubledgerService) GetTransactionHistory(ctx context.Context, userId, as
 			&tx.ExternalTransactionId, &tx.Address, &tx.Reference,
 			&tx.Status, &tx.CreatedAt, &tx.ProcessedAt)
 		if err != nil {
-			return nil, fmt.Errorf("failed to scan transaction: %v", err)
+			return nil, fmt.Errorf("failed to scan transaction: %w", err)
 		}
 
 		tx.Amount, err = decimal.NewFromString(amountStr)
 		if err != nil {
-			return nil, fmt.Errorf("failed to parse amount '%s': %v", amountStr, err)
+			return nil, fmt.Errorf("failed to parse amount '%s': %w", amountStr, err)
 		}
 
 		tx.BalanceBefore, err = decimal.NewFromString(balanceBeforeStr)
 		if err != nil {
-			return nil, fmt.Errorf("failed to parse balance before '%s': %v", balanceBeforeStr, err)
+			return nil, fmt.Errorf("failed to parse balance before '%s': %w", balanceBeforeStr, err)
 		}
 
 		tx.BalanceAfter, err = decimal.NewFromString(balanceAfterStr)
 		if err != nil {
-			return nil, fmt.Errorf("failed to parse balance after '%s': %v", balanceAfterStr, err)
+			return nil, fmt.Errorf("failed to parse balance after '%s': %w", balanceAfterStr, err)
 		}
 
 		transactions = append(transactions, tx)
@@ -260,7 +260,7 @@ func (s *SubledgerService) GetTransactionHistory(ctx context.Context, userId, as
 	// Check for errors during iteration
 	if err := rows.Err(); err != nil {
 		zap.L().Error("Error during transaction row iteration", zap.Error(err))
-		return nil, fmt.Errorf("error iterating transaction rows: %v", err)
+		return nil, fmt.Errorf("error iterating transaction rows: %w", err)
 	}
 
 	return transactions, nil
@@ -271,7 +271,7 @@ func (s *SubledgerService) GetMostRecentTransactionTime(ctx context.Context) (ti
 	var timestampStr sql.NullString
 	err := s.db.QueryRowContext(ctx, queryGetMostRecentTransactionTime).Scan(&timestampStr)
 	if err != nil {
-		return time.Time{}, fmt.Errorf("failed to get most recent transaction time: %v", err)
+		return time.Time{}, fmt.Errorf("failed to get most recent transaction time: %w", err)
 	}
 
 	if !timestampStr.Valid || timestampStr.String == "" {
@@ -291,7 +291,7 @@ func (s *SubledgerService) GetMostRecentTransactionTime(ctx context.Context) (ti
 			if err != nil {
 				parsedTime, err = time.Parse(time.RFC3339, timestampStr.String)
 				if err != nil {
-					return time.Time{}, fmt.Errorf("failed to parse timestamp %q: %v", timestampStr.String, err)
+					return time.Time{}, fmt.Errorf("failed to parse timestamp %q: %w", timestampStr.String, err)
 				}
 			}
 		}

@@ -2,9 +2,11 @@ package api
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
+	"prime-send-receive-go/internal/database"
 	"prime-send-receive-go/internal/models"
 
 	"github.com/shopspring/decimal"
@@ -35,7 +37,7 @@ func (s *LedgerService) ProcessDeposit(ctx context.Context, address, asset strin
 	// Process the deposit through subledger
 	err := s.db.ProcessDeposit(ctx, address, asset, amount, externalTxId)
 	if err != nil {
-		if strings.Contains(err.Error(), "duplicate transaction") {
+		if errors.Is(err, database.ErrDuplicateTransaction) {
 			zap.L().Info("Duplicate transaction detected in API service",
 				zap.String("address", address),
 				zap.String("asset_network", asset),

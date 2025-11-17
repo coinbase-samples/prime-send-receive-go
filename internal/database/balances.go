@@ -22,13 +22,13 @@ func (s *SubledgerService) GetBalance(ctx context.Context, userId, asset string)
 	}
 	if err != nil {
 		zap.L().Error("Failed to get balance", zap.String("user_id", userId), zap.String("asset_network", asset), zap.Error(err))
-		return decimal.Zero, fmt.Errorf("failed to get balance: %v", err)
+		return decimal.Zero, fmt.Errorf("failed to get balance: %w", err)
 	}
 
 	balance, err := decimal.NewFromString(balanceStr)
 	if err != nil {
 		zap.L().Error("Failed to parse balance", zap.String("balance_str", balanceStr), zap.Error(err))
-		return decimal.Zero, fmt.Errorf("failed to parse balance: %v", err)
+		return decimal.Zero, fmt.Errorf("failed to parse balance: %w", err)
 	}
 
 	zap.L().Debug("Retrieved balance", zap.String("user_id", userId), zap.String("asset_network", asset), zap.String("balance", balance.String()))
@@ -42,7 +42,7 @@ func (s *SubledgerService) GetAllBalances(ctx context.Context, userId string) ([
 	rows, err := s.db.QueryContext(ctx, queryGetAllUserBalances, userId)
 	if err != nil {
 		zap.L().Error("Failed to get all balances", zap.String("user_id", userId), zap.Error(err))
-		return nil, fmt.Errorf("failed to get all balances: %v", err)
+		return nil, fmt.Errorf("failed to get all balances: %w", err)
 	}
 	defer func(rows *sql.Rows) {
 		if err := rows.Close(); err != nil {
@@ -57,12 +57,12 @@ func (s *SubledgerService) GetAllBalances(ctx context.Context, userId string) ([
 		err := rows.Scan(&balance.Id, &balance.UserId, &balance.Asset, &balanceStr,
 			&balance.LastTransactionId, &balance.Version, &balance.UpdatedAt)
 		if err != nil {
-			return nil, fmt.Errorf("failed to scan balance: %v", err)
+			return nil, fmt.Errorf("failed to scan balance: %w", err)
 		}
 
 		balance.Balance, err = decimal.NewFromString(balanceStr)
 		if err != nil {
-			return nil, fmt.Errorf("failed to parse balance '%s': %v", balanceStr, err)
+			return nil, fmt.Errorf("failed to parse balance '%s': %w", balanceStr, err)
 		}
 
 		balances = append(balances, balance)
@@ -71,7 +71,7 @@ func (s *SubledgerService) GetAllBalances(ctx context.Context, userId string) ([
 	// Check for errors during iteration
 	if err := rows.Err(); err != nil {
 		zap.L().Error("Error during balance row iteration", zap.Error(err))
-		return nil, fmt.Errorf("error iterating balance rows: %v", err)
+		return nil, fmt.Errorf("error iterating balance rows: %w", err)
 	}
 
 	zap.L().Debug("Retrieved all balances", zap.String("user_id", userId), zap.Int("count", len(balances)))
@@ -85,19 +85,19 @@ func (s *SubledgerService) ReconcileBalance(ctx context.Context, userId, asset s
 	// Get current balance from account_balances table
 	currentBalance, err := s.GetBalance(ctx, userId, asset)
 	if err != nil {
-		return fmt.Errorf("failed to get current balance: %v", err)
+		return fmt.Errorf("failed to get current balance: %w", err)
 	}
 
 	// Calculate balance from transaction history
 	var calculatedBalanceStr string
 	err = s.db.QueryRowContext(ctx, queryReconcileBalance, userId, asset).Scan(&calculatedBalanceStr)
 	if err != nil {
-		return fmt.Errorf("failed to calculate balance from transactions: %v", err)
+		return fmt.Errorf("failed to calculate balance from transactions: %w", err)
 	}
 
 	calculatedBalance, err := decimal.NewFromString(calculatedBalanceStr)
 	if err != nil {
-		return fmt.Errorf("failed to parse calculated balance '%s': %v", calculatedBalanceStr, err)
+		return fmt.Errorf("failed to parse calculated balance '%s': %w", calculatedBalanceStr, err)
 	}
 
 	// Check if balances match (exact decimal comparison)

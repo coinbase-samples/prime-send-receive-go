@@ -3,7 +3,7 @@ package database
 import (
 	"context"
 	"database/sql"
-	"strings"
+	"errors"
 	"testing"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -112,7 +112,7 @@ func TestProcessTransaction_DuplicateHandling(t *testing.T) {
 	}
 
 	// Should contain "duplicate transaction" in error message
-	if !strings.Contains(err.Error(), "duplicate transaction") {
+	if !errors.Is(err, ErrDuplicateTransaction) {
 		t.Errorf("Expected duplicate transaction error, got: %v", err)
 	}
 }

@@ -31,7 +31,7 @@ type Service struct {
 func NewService(creds *credentials.Credentials) (*Service, error) {
 	httpClient, err := createCustomHttpClient()
 	if err != nil {
-		return nil, fmt.Errorf("unable to create custom http client: %v", err)
+		return nil, fmt.Errorf("unable to create custom http client: %w", err)
 	}
 
 	restClient := client.NewRestClient(creds, httpClient)
@@ -75,7 +75,7 @@ func (s *Service) ListPortfolios(ctx context.Context) ([]models.Portfolio, error
 
 	response, err := s.portfoliosSvc.ListPortfolios(ctx, request)
 	if err != nil {
-		return nil, fmt.Errorf("unable to list portfolios: %v", err)
+		return nil, fmt.Errorf("unable to list portfolios: %w", err)
 	}
 
 	portfolioList := make([]models.Portfolio, len(response.Portfolios))
@@ -113,7 +113,7 @@ func (s *Service) ListWallets(ctx context.Context, portfolioId, walletType strin
 
 	response, err := s.walletsSvc.ListWallets(ctx, request)
 	if err != nil {
-		return nil, fmt.Errorf("unable to list wallets: %v", err)
+		return nil, fmt.Errorf("unable to list wallets: %w", err)
 	}
 
 	walletList := make([]models.Wallet, len(response.Wallets))
@@ -138,7 +138,7 @@ func (s *Service) CreateDepositAddress(ctx context.Context, portfolioId, walletI
 
 	response, err := s.walletsSvc.CreateWalletAddress(ctx, request)
 	if err != nil {
-		return nil, fmt.Errorf("unable to create wallet address: %v", err)
+		return nil, fmt.Errorf("unable to create wallet address: %w", err)
 	}
 
 	return &models.DepositAddress{
@@ -160,7 +160,7 @@ func (s *Service) CreateWallet(ctx context.Context, portfolioId, name, symbol, w
 
 	response, err := s.walletsSvc.CreateWallet(ctx, request)
 	if err != nil {
-		return nil, fmt.Errorf("unable to create wallet: %v", err)
+		return nil, fmt.Errorf("unable to create wallet: %w", err)
 	}
 
 	return &models.Wallet{
@@ -237,7 +237,7 @@ func (s *Service) CreateWithdrawal(ctx context.Context, params CreateWithdrawalP
 			zap.String("amount", params.Amount),
 			zap.String("asset", params.Asset),
 			zap.Error(err))
-		return nil, fmt.Errorf("unable to create withdrawal: %v", err)
+		return nil, fmt.Errorf("unable to create withdrawal: %w", err)
 	}
 
 	zap.L().Info("Withdrawal created successfully",
@@ -279,7 +279,7 @@ func (s *Service) ListWalletTransactions(ctx context.Context, portfolioId, walle
 		zap.L().Error("Failed to list wallet transactions",
 			zap.String("wallet_id", walletId),
 			zap.Error(err))
-		return nil, fmt.Errorf("unable to list wallet transactions: %v", err)
+		return nil, fmt.Errorf("unable to list wallet transactions: %w", err)
 	}
 
 	zap.L().Debug("Prime API response received",

@@ -16,6 +16,17 @@ import (
 	"go.uber.org/zap"
 )
 
+// SendReceiveListenerConfig contains configuration for SendReceiveListener
+type SendReceiveListenerConfig struct {
+	PrimeService    *prime.Service
+	ApiService      *api.LedgerService
+	DbService       *database.Service
+	PortfolioId     string
+	LookbackWindow  time.Duration
+	PollingInterval time.Duration
+	CleanupInterval time.Duration
+}
+
 // SendReceiveListener polls Prime API for new deposits and processes them
 type SendReceiveListener struct {
 	primeService *prime.Service
@@ -39,24 +50,16 @@ type SendReceiveListener struct {
 }
 
 // NewSendReceiveListener creates a new deposit listener
-func NewSendReceiveListener(
-	primeService *prime.Service,
-	apiService *api.LedgerService,
-	dbService *database.Service,
-	portfolioId string,
-	lookbackWindow time.Duration,
-	pollingInterval time.Duration,
-	cleanupInterval time.Duration,
-) *SendReceiveListener {
+func NewSendReceiveListener(cfg SendReceiveListenerConfig) *SendReceiveListener {
 	return &SendReceiveListener{
-		primeService:    primeService,
-		apiService:      apiService,
-		dbService:       dbService,
+		primeService:    cfg.PrimeService,
+		apiService:      cfg.ApiService,
+		dbService:       cfg.DbService,
 		processedTxIds:  make(map[string]time.Time),
-		lookbackWindow:  lookbackWindow,
-		pollingInterval: pollingInterval,
-		cleanupInterval: cleanupInterval,
-		portfolioId:     portfolioId,
+		lookbackWindow:  cfg.LookbackWindow,
+		pollingInterval: cfg.PollingInterval,
+		cleanupInterval: cfg.CleanupInterval,
+		portfolioId:     cfg.PortfolioId,
 		stopChan:        make(chan struct{}),
 		doneChan:        make(chan struct{}),
 	}
@@ -119,7 +122,7 @@ func (d *SendReceiveListener) LoadMonitoredWallets(ctx context.Context, assetsFi
 	// Load asset configs from file
 	assetConfigs, err := common.LoadAssetConfig(assetsFile)
 	if err != nil {
-		return fmt.Errorf("failed to load assets from YAML: %v", err)
+		return fmt.Errorf("failed to load assets from YAML: %w", err)
 	}
 
 	zap.L().Info("Loaded assets from file",
@@ -133,7 +136,7 @@ func (d *SendReceiveListener) LoadMonitoredWallets(ctx context.Context, assetsFi
 	// Query all users
 	users, err := d.dbService.GetUsers(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to get users: %v", err)
+		return fmt.Errorf("failed to get users: %w", err)
 	}
 
 	// Collect wallets from all users
@@ -161,7 +164,7 @@ func (d *SendReceiveListener) fetchWalletTransactions(ctx context.Context, walle
 	// Call Prime SDK
 	response, err := d.primeService.ListWalletTransactions(ctx, d.portfolioId, walletId, since)
 	if err != nil {
-		return nil, fmt.Errorf("Prime API call failed: %v", err)
+		return nil, fmt.Errorf("Prime API call failed: %w", err)
 	}
 
 	// Convert Prime SDK response to our internal format
@@ -277,7 +280,7 @@ func (d *SendReceiveListener) findUserByIdempotencyKeyPrefix(ctx context.Context
 	// Get all users from database
 	users, err := d.dbService.GetUsers(ctx)
 	if err != nil {
-		return "", fmt.Errorf("failed to get users: %v", err)
+		return "", fmt.Errorf("failed to get users: %w", err)
 	}
 
 	// Look for a user whose Id starts with the same prefix

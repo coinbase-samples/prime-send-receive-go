@@ -70,7 +70,7 @@ func getEnvDuration(key string, defaultValue time.Duration) (time.Duration, erro
 	if value := os.Getenv(key); value != "" {
 		duration, err := time.ParseDuration(value)
 		if err != nil {
-			return 0, fmt.Errorf("invalid duration for %s: %q (%v)", key, value, err)
+			return 0, fmt.Errorf("invalid duration for %s: %q (%w)", key, value, err)
 		}
 		return duration, nil
 	}

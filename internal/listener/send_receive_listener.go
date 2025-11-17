@@ -16,7 +16,7 @@ func (d *SendReceiveListener) Start(ctx context.Context, assetsFile string) erro
 
 	// Load monitored wallets
 	if err := d.LoadMonitoredWallets(ctx, assetsFile); err != nil {
-		return fmt.Errorf("failed to load monitored wallets: %v", err)
+		return fmt.Errorf("failed to load monitored wallets: %w", err)
 	}
 
 	if len(d.monitoredWallets) == 0 {
@@ -27,7 +27,7 @@ func (d *SendReceiveListener) Start(ctx context.Context, assetsFile string) erro
 	// Perform startup recovery to catch any missed transactions
 	if err := d.performStartupRecovery(ctx); err != nil {
 		zap.L().Error("Startup recovery failed", zap.Error(err))
-		return fmt.Errorf("startup recovery failed: %v", err)
+		return fmt.Errorf("startup recovery failed: %w", err)
 	}
 
 	go d.pollLoop(ctx)
@@ -113,7 +113,7 @@ func (d *SendReceiveListener) pollWallet(ctx context.Context, wallet models.Wall
 	// Fetch transactions from Prime API
 	transactions, err := d.fetchWalletTransactions(ctx, wallet.Id, since)
 	if err != nil {
-		return fmt.Errorf("failed to fetch wallet transactions: %v", err)
+		return fmt.Errorf("failed to fetch wallet transactions: %w", err)
 	}
 
 	zap.L().Info("Fetched wallet transactions",
@@ -173,7 +173,7 @@ func (d *SendReceiveListener) performStartupRecovery(ctx context.Context) error 
 	// Get the most recent transaction timestamp from our database
 	mostRecentTime, err := d.dbService.GetMostRecentTransactionTime(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to get most recent transaction time: %v", err)
+		return fmt.Errorf("failed to get most recent transaction time: %w", err)
 	}
 
 	now := time.Now().UTC() // Ensure we work in UTC
@@ -234,7 +234,7 @@ func (d *SendReceiveListener) recoverWalletTransactions(ctx context.Context, wal
 	// Fetch transactions from Prime API
 	transactions, err := d.fetchWalletTransactions(ctx, wallet.Id, since)
 	if err != nil {
-		return 0, fmt.Errorf("failed to fetch wallet transactions during recovery: %v", err)
+		return 0, fmt.Errorf("failed to fetch wallet transactions during recovery: %w", err)
 	}
 
 	zap.L().Debug("Fetched transactions for recovery",
