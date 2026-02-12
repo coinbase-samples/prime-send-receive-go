@@ -23,7 +23,7 @@ import (
 
 	"prime-send-receive-go/internal/common"
 	"prime-send-receive-go/internal/config"
-	"prime-send-receive-go/internal/database"
+	"prime-send-receive-go/internal/store"
 	"prime-send-receive-go/internal/models"
 
 	"go.uber.org/zap"
@@ -64,7 +64,7 @@ func printAddresses(addresses []models.Address) {
 	}
 }
 
-func processUser(ctx context.Context, user common.UserInfo, dbService *database.Service, logger *zap.Logger) (int, error) {
+func processUser(ctx context.Context, user common.UserInfo, dbService store.LedgerStore, logger *zap.Logger) (int, error) {
 	addresses, err := dbService.GetAllUserAddresses(ctx, user.Id)
 	if err != nil {
 		return 0, fmt.Errorf("failed to get addresses: %w", err)
@@ -80,7 +80,7 @@ func processUser(ctx context.Context, user common.UserInfo, dbService *database.
 	return len(addresses), nil
 }
 
-func processUsersAndGenerateReport(ctx context.Context, users []common.UserInfo, dbService *database.Service, logger *zap.Logger) reportStats {
+func processUsersAndGenerateReport(ctx context.Context, users []common.UserInfo, dbService store.LedgerStore, logger *zap.Logger) reportStats {
 	stats := reportStats{}
 
 	for _, user := range users {

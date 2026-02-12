@@ -14,6 +14,7 @@ This system processes crypto deposits and withdrawals by monitoring Prime API tr
 - Subledger with O(1) balance lookups
 - Complete audit trail and transaction history
 - Configurable via environment variables
+- **Pluggable storage backend**: SQLite (default) or [Formance Ledger](https://formance.com)
 
 **[Architecture Diagrams](ARCHITECTURE.md)** - System architecture, deposit/withdrawal flows, and database schema
 
@@ -66,6 +67,26 @@ LISTENER_POLLING_INTERVAL=30s      # How often to poll Prime API
 LISTENER_CLEANUP_INTERVAL=15m      # How often to clean up processed transaction cache
 ASSETS_FILE=assets.yaml            # Asset configuration file
 ```
+
+### Storage Backend
+
+The system supports two storage backends, selected via `BACKEND_TYPE`:
+
+**SQLite (default)** -- embedded database, zero dependencies:
+```bash
+BACKEND_TYPE=sqlite
+```
+
+**Formance Ledger** -- remote double-entry ledger with native Numscript, idempotency, and audit trail:
+```bash
+BACKEND_TYPE=formance
+FORMANCE_STACK_URL=https://orgID-stackID.sandbox.formance.cloud
+FORMANCE_CLIENT_ID=your-client-id
+FORMANCE_CLIENT_SECRET=your-client-secret
+FORMANCE_LEDGER_NAME=coinbase-prime-send-receive
+```
+
+The Formance backend uses the [formance-sdk-go/v3](https://github.com/formancehq/formance-sdk-go) SDK. The ledger is auto-created on first startup. See [ARCHITECTURE.md](ARCHITECTURE.md) for a detailed comparison of both backends.
 
 **API Usage Notes:**
 - The system fetches up to 500 transactions per wallet per polling cycle

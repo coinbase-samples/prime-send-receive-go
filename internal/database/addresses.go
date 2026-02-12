@@ -22,19 +22,14 @@ import (
 	"fmt"
 
 	"prime-send-receive-go/internal/models"
+	"prime-send-receive-go/internal/store"
 
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 )
 
-type StoreAddressParams struct {
-	UserId            string
-	Asset             string
-	Network           string
-	Address           string
-	WalletId          string
-	AccountIdentifier string
-}
+// StoreAddressParams is an alias so callers that import database.StoreAddressParams keep compiling.
+type StoreAddressParams = store.StoreAddressParams
 
 func (s *Service) StoreAddress(ctx context.Context, params StoreAddressParams) (*models.Address, error) {
 	zap.L().Info("Storing address",

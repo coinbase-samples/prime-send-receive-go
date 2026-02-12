@@ -24,8 +24,10 @@ import (
 	"strings"
 
 	"prime-send-receive-go/internal/database"
+	"prime-send-receive-go/internal/formance"
 	"prime-send-receive-go/internal/models"
 	"prime-send-receive-go/internal/prime"
+	"prime-send-receive-go/internal/store"
 
 	"github.com/coinbase-samples/prime-sdk-go/credentials"
 	"github.com/joho/godotenv"
@@ -47,9 +49,10 @@ func init() {
 }
 
 type Services struct {
-	DbService        *database.Service
+	DbService        store.LedgerStore
 	PrimeService     *prime.Service
 	DefaultPortfolio *models.Portfolio
+	Portfolios       []models.Portfolio
 }
 
 func InitializeLogger() (*zap.Logger, func()) {
@@ -72,7 +75,7 @@ func InitializeLogger() (*zap.Logger, func()) {
 }
 
 func InitializeServices(ctx context.Context, cfg *models.Config) (*Services, error) {
-	dbService, err := database.NewService(ctx, cfg.Database)
+	ledger, err := initLedgerStore(ctx, cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -80,41 +83,67 @@ func InitializeServices(ctx context.Context, cfg *models.Config) (*Services, err
 	zap.L().Info("Loading Prime API credentials")
 	creds, err := loadPrimeCredentials()
 	if err != nil {
-		dbService.Close()
+		ledger.Close()
 		return nil, err
 	}
 
 	primeService, err := prime.NewService(creds)
 	if err != nil {
-		dbService.Close()
+		ledger.Close()
 		return nil, err
 	}
 
-	zap.L().Info("Finding default portfolio")
+	zap.L().Info("Discovering portfolios")
+	allPortfolios, err := primeService.ListPortfolios(ctx)
+	if err != nil {
+		ledger.Close()
+		return nil, fmt.Errorf("failed to list portfolios: %w", err)
+	}
+	for i, p := range allPortfolios {
+		zap.L().Info("  Portfolio",
+			zap.Int("index", i),
+			zap.String("id", p.Id),
+			zap.String("name", p.Name))
+	}
+
 	defaultPortfolio, err := primeService.FindDefaultPortfolio(ctx)
 	if err != nil {
-		dbService.Close()
+		ledger.Close()
 		return nil, err
 	}
 	zap.L().Info("Using default portfolio",
 		zap.String("name", defaultPortfolio.Name),
 		zap.String("id", defaultPortfolio.Id))
 
+	// If the backend is Formance, inject the portfolio ID for Numscript account paths.
+	if fSvc, ok := ledger.(*formance.Service); ok {
+		fSvc.SetPortfolioID(defaultPortfolio.Id)
+	}
+
 	return &Services{
-		DbService:        dbService,
+		DbService:        ledger,
 		PrimeService:     primeService,
 		DefaultPortfolio: defaultPortfolio,
+		Portfolios:       allPortfolios,
 	}, nil
 }
 
-// InitializeDatabaseOnly initializes just the database service without Prime API
-// Useful for read-only operations like querying balances
-func InitializeDatabaseOnly(ctx context.Context, cfg *models.Config) (*database.Service, error) {
-	dbService, err := database.NewService(ctx, cfg.Database)
-	if err != nil {
-		return nil, err
+// InitializeDatabaseOnly initializes just the ledger store without Prime API.
+// Useful for read-only operations like querying balances.
+func InitializeDatabaseOnly(ctx context.Context, cfg *models.Config) (store.LedgerStore, error) {
+	return initLedgerStore(ctx, cfg)
+}
+
+// initLedgerStore selects and initialises the backend based on BACKEND_TYPE.
+func initLedgerStore(ctx context.Context, cfg *models.Config) (store.LedgerStore, error) {
+	switch strings.ToLower(cfg.BackendType) {
+	case "formance":
+		zap.L().Info("Using Formance backend", zap.String("stack_url", cfg.Formance.StackURL))
+		return formance.NewService(ctx, cfg.Formance)
+	default:
+		zap.L().Info("Using SQLite backend", zap.String("db_path", cfg.Database.Path))
+		return database.NewService(ctx, cfg.Database)
 	}
-	return dbService, nil
 }
 
 func (cs *Services) Close() {

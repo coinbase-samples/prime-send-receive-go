@@ -19,16 +19,21 @@ package database
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"time"
 
 	"prime-send-receive-go/internal/models"
+	"prime-send-receive-go/internal/store"
 
 	"github.com/google/uuid"
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/shopspring/decimal"
 	"go.uber.org/zap"
 )
+
+// Compile-time check: *Service must satisfy store.LedgerStore.
+var _ store.LedgerStore = (*Service)(nil)
 
 type Service struct {
 	db        *sql.DB
@@ -185,6 +190,16 @@ func (s *Service) GetAllUserBalances(ctx context.Context, userId string) ([]mode
 	return s.subledger.GetAllBalances(ctx, userId)
 }
 
+// ProcessDepositPending is a no-op for SQLite (no pending concept for deposits).
+func (s *Service) ProcessDepositPending(_ context.Context, _, _ string, _ decimal.Decimal, _, _ string) error {
+	return nil
+}
+
+// ConfirmDeposit in SQLite just delegates to ProcessDeposit (single-phase).
+func (s *Service) ConfirmDeposit(ctx context.Context, address, asset string, amount decimal.Decimal, transactionId string) error {
+	return s.ProcessDeposit(ctx, address, asset, amount, transactionId)
+}
+
 func (s *Service) ProcessDeposit(ctx context.Context, address, asset string, amount decimal.Decimal, transactionId string) error {
 	// Find user by address
 	user, addr, err := s.FindUserByAddress(ctx, address)
@@ -274,6 +289,154 @@ func (s *Service) ProcessWithdrawal(ctx context.Context, userId, asset string, a
 	return nil
 }
 
+// ProcessWithdrawalFromWallet records a pending withdrawal from the Prime wallet (SQLite).
+func (s *Service) ProcessWithdrawalFromWallet(ctx context.Context, params store.WithdrawalFromWalletParams) error {
+	_, err := s.subledger.ProcessTransaction(ctx, ProcessTransactionParams{
+		UserId:          "prime-platform",
+		Asset:           params.Symbol,
+		TransactionType: "withdrawal",
+		Amount:          params.Amount.Neg(),
+		ExternalTxId:    params.TransactionId,
+		Reference:       fmt.Sprintf("WITHDRAWAL_PENDING: %s %s", params.Amount.String(), params.Symbol),
+	})
+	if err != nil && !errors.Is(err, store.ErrDuplicateTransaction) {
+		return fmt.Errorf("failed to record wallet withdrawal: %w", err)
+	}
+	return nil
+}
+
+// RecordFailedWithdrawalPlatform records a failed withdrawal that could not be
+// matched to a user. Creates both a withdrawal and a compensating deposit so
+// the net balance is zero but the audit trail exists.
+func (s *Service) RecordFailedWithdrawalPlatform(ctx context.Context, params store.FailedWithdrawalPlatformParams) error {
+	// Step 1: synthetic withdrawal (debit)
+	_, err := s.subledger.ProcessTransaction(ctx, ProcessTransactionParams{
+		UserId:          "prime-platform",
+		Asset:           params.Symbol,
+		TransactionType: "withdrawal",
+		Amount:          params.Amount.Neg(),
+		ExternalTxId:    params.TransactionId,
+		Reference:       fmt.Sprintf("FAILED_WITHDRAWAL: %s %s [%s]", params.Amount.String(), params.Symbol, params.Status),
+	})
+	if err != nil && !errors.Is(err, store.ErrDuplicateTransaction) {
+		return fmt.Errorf("failed to record failed withdrawal initiation: %w", err)
+	}
+
+	// Step 2: synthetic reversal (credit back)
+	reversalTxId := params.TransactionId + "-failed-reversal"
+	_, err = s.subledger.ProcessTransaction(ctx, ProcessTransactionParams{
+		UserId:          "prime-platform",
+		Asset:           params.Symbol,
+		TransactionType: "deposit",
+		Amount:          params.Amount,
+		ExternalTxId:    reversalTxId,
+		Reference:       fmt.Sprintf("FAILED_WITHDRAWAL_REVERSAL: %s %s [%s]", params.Amount.String(), params.Symbol, params.Status),
+	})
+	if err != nil && !errors.Is(err, store.ErrDuplicateTransaction) {
+		return fmt.Errorf("failed to record failed withdrawal reversal: %w", err)
+	}
+
+	zap.L().Info("Recorded failed withdrawal platform round-trip (SQLite)",
+		zap.String("transaction_id", params.TransactionId),
+		zap.String("status", params.Status),
+		zap.String("asset", params.Symbol),
+		zap.String("amount", params.Amount.String()))
+	return nil
+}
+
+// ConfirmWithdrawalDirect records a confirmed withdrawal directly (SQLite).
+func (s *Service) ConfirmWithdrawalDirect(ctx context.Context, params store.WithdrawalConfirmDirectParams) error {
+	_, err := s.subledger.ProcessTransaction(ctx, ProcessTransactionParams{
+		UserId:          params.UserId,
+		Asset:           params.Asset,
+		TransactionType: "withdrawal",
+		Amount:          params.Amount.Neg(),
+		ExternalTxId:    params.ExternalTxId,
+	})
+	if err != nil && !errors.Is(err, store.ErrDuplicateTransaction) {
+		return err
+	}
+	return nil
+}
+
+// ConfirmWithdrawal is a no-op for the SQLite backend.
+// SQLite uses a two-phase model where the balance is debited immediately; there
+// is no pending account to settle. The method exists to satisfy the LedgerStore
+// interface for backends (like Formance) that use a three-phase withdrawal flow.
+func (s *Service) ConfirmWithdrawal(_ context.Context, _, _ string, _ decimal.Decimal, _, _ string) error {
+	return nil
+}
+
+// RecordPlatformTransaction records a platform-level transaction (conversion, transfer, etc.)
+// in the SQLite subledger under a portfolio-scoped platform user.
+func (s *Service) RecordPlatformTransaction(ctx context.Context, params store.PlatformTransactionParams) error {
+	amt, err := decimal.NewFromString(params.Amount)
+	if err != nil {
+		return fmt.Errorf("invalid amount %q: %w", params.Amount, err)
+	}
+
+	_, err = s.subledger.ProcessTransaction(ctx, ProcessTransactionParams{
+		UserId:          "prime-platform",
+		Asset:           params.Symbol,
+		TransactionType: params.Type,
+		Amount:          amt,
+		ExternalTxId:    params.TransactionId,
+		Address:         "",
+		Reference:       fmt.Sprintf("%s: %s %s %s", params.Type, params.Amount, params.Symbol, params.Network),
+	})
+	if err != nil {
+		if errors.Is(err, store.ErrDuplicateTransaction) {
+			return nil
+		}
+		return fmt.Errorf("failed to record platform transaction: %w", err)
+	}
+	return nil
+}
+
+// RecordConversion records a conversion as two transactions in SQLite (debit source, credit destination).
+func (s *Service) RecordConversion(ctx context.Context, params store.ConversionParams) error {
+	srcAmt, _ := decimal.NewFromString(params.SourceAmount)
+	if srcAmt.IsNegative() {
+		srcAmt = srcAmt.Neg()
+	}
+	dstAmount := params.DestinationAmount
+	if dstAmount == "" {
+		dstAmount = params.SourceAmount
+	}
+	dstAmt, _ := decimal.NewFromString(dstAmount)
+	if dstAmt.IsNegative() {
+		dstAmt = dstAmt.Neg()
+	}
+
+	// Debit source asset.
+	_, err := s.subledger.ProcessTransaction(ctx, ProcessTransactionParams{
+		UserId:          "prime-platform",
+		Asset:           params.SourceSymbol,
+		TransactionType: "conversion-out",
+		Amount:          srcAmt.Neg(),
+		ExternalTxId:    params.TransactionId + "-src",
+		Reference:       fmt.Sprintf("CONVERSION: -%s %s -> %s", params.SourceAmount, params.SourceSymbol, params.DestinationSymbol),
+	})
+	if err != nil && !errors.Is(err, store.ErrDuplicateTransaction) {
+		return fmt.Errorf("failed to record conversion source: %w", err)
+	}
+
+	// Credit destination asset.
+	_, err = s.subledger.ProcessTransaction(ctx, ProcessTransactionParams{
+		UserId:          "prime-platform",
+		Asset:           params.DestinationSymbol,
+		TransactionType: "conversion-in",
+		Amount:          dstAmt,
+		ExternalTxId:    params.TransactionId + "-dst",
+		Reference:       fmt.Sprintf("CONVERSION: +%s %s <- %s", dstAmount, params.DestinationSymbol, params.SourceSymbol),
+	})
+	if err != nil && !errors.Is(err, store.ErrDuplicateTransaction) {
+		return fmt.Errorf("failed to record conversion destination: %w", err)
+	}
+
+	return nil
+}
+
 func (s *Service) GetTransactionHistory(ctx context.Context, userId, asset string, limit, offset int) ([]models.Transaction, error) {
 	return s.subledger.GetTransactionHistory(ctx, userId, asset, limit, offset)
 }
@@ -284,6 +447,22 @@ func (s *Service) ReconcileUserBalance(ctx context.Context, userId, asset string
 
 func (s *Service) GetMostRecentTransactionTime(ctx context.Context) (time.Time, error) {
 	return s.subledger.GetMostRecentTransactionTime(ctx)
+}
+
+// HasPendingWithdrawal checks if a withdrawal with the given reference exists (SQLite).
+func (s *Service) HasPendingWithdrawal(ctx context.Context, withdrawalRef string) (bool, error) {
+	var id string
+	err := s.db.QueryRowContext(ctx, queryCheckDuplicateTransaction, withdrawalRef).Scan(&id)
+	if err == nil {
+		return true, nil
+	}
+	return false, nil
+}
+
+// RevertTransaction is not natively supported by SQLite.
+// Returns ErrNotSupported so callers fall back to ReverseWithdrawal.
+func (s *Service) RevertTransaction(_ context.Context, _ string) error {
+	return fmt.Errorf("native revert not supported by SQLite backend")
 }
 
 // ReverseWithdrawal credits back a withdrawal that failed (rollback)

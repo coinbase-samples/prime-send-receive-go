@@ -48,9 +48,10 @@ type AccountBalance struct {
 	Id                string          `db:"id"`
 	UserId            string          `db:"user_id"`
 	Asset             string          `db:"asset"`
+	Network           string          `db:"network"` // populated by Formance (per-network); empty for SQLite (aggregated)
 	Balance           decimal.Decimal `db:"balance"`
 	LastTransactionId string          `db:"last_transaction_id"`
-	Version           int64           `db:"version"`
+	Version           int64           `db:"version"` // SQLite optimistic lock; 0 for Formance
 	UpdatedAt         time.Time       `db:"updated_at"`
 }
 

@@ -20,15 +20,15 @@ import (
 	"context"
 	"fmt"
 
-	"prime-send-receive-go/internal/database"
+	"prime-send-receive-go/internal/store"
 )
 
 // LedgerService provides minimal API
 type LedgerService struct {
-	db *database.Service
+	db store.LedgerStore
 }
 
-func NewLedgerService(db *database.Service) *LedgerService {
+func NewLedgerService(db store.LedgerStore) *LedgerService {
 	return &LedgerService{
 		db: db,
 	}

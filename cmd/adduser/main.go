@@ -20,12 +20,14 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"os"
 	"regexp"
 	"strings"
 
 	"prime-send-receive-go/internal/common"
 	"prime-send-receive-go/internal/config"
-	"prime-send-receive-go/internal/database"
+	"prime-send-receive-go/internal/models"
+	"prime-send-receive-go/internal/store"
 
 	"github.com/google/uuid"
 	"go.uber.org/zap"
@@ -111,7 +113,7 @@ func generateAndStoreAddress(ctx context.Context, services *common.Services, use
 		return "", fmt.Errorf("error creating deposit address: %w", err)
 	}
 
-	storedAddress, err := services.DbService.StoreAddress(ctx, database.StoreAddressParams{
+	storedAddress, err := services.DbService.StoreAddress(ctx, store.StoreAddressParams{
 		UserId:            userId,
 		Asset:             assetConfig.Symbol,
 		Network:           assetConfig.Network,
@@ -145,12 +147,6 @@ func processAsset(ctx context.Context, services *common.Services, userId string,
 		return result
 	}
 
-	if exists {
-		fmt.Printf("✓ %s-%s: Address already exists\n", assetConfig.Symbol, assetConfig.Network)
-		result.success = true
-		return result
-	}
-
 	// Get or create wallet
 	walletId, err := getOrCreateWallet(ctx, services, assetConfig.Symbol)
 	if err != nil {
@@ -158,6 +154,45 @@ func processAsset(ctx context.Context, services *common.Services, userId string,
 			zap.String("asset", assetConfig.Symbol),
 			zap.Error(err))
 		fmt.Printf("✗ %s-%s: Failed to get wallet\n", assetConfig.Symbol, assetConfig.Network)
+		return result
+	}
+
+	// Always sync ALL addresses from Prime to ensure local store metadata is up to date.
+	primeAddresses, primeErr := services.PrimeService.ListWalletAddresses(ctx, services.DefaultPortfolio.Id, walletId, assetConfig.Network)
+	if primeErr == nil && len(primeAddresses) > 0 {
+		var lastAddr string
+		for _, addr := range primeAddresses {
+			_, storeErr := services.DbService.StoreAddress(ctx, store.StoreAddressParams{
+				UserId:            userId,
+				Asset:             assetConfig.Symbol,
+				Network:           assetConfig.Network,
+				Address:           addr.Address,
+				WalletId:          walletId,
+				AccountIdentifier: addr.Id,
+			})
+			if storeErr != nil {
+				zap.L().Warn("Failed to store synced address",
+					zap.String("address", addr.Address), zap.Error(storeErr))
+			} else {
+				lastAddr = addr.Address
+			}
+		}
+		if lastAddr != "" {
+			label := "synced"
+			if !exists {
+				label = "imported from Prime"
+			}
+			fmt.Printf("✓ %s-%s: %d addresses (%s)\n", assetConfig.Symbol, assetConfig.Network, len(primeAddresses), label)
+			result.success = true
+			result.address = lastAddr
+			return result
+		}
+	}
+
+	// If local store already has it and Prime sync failed/empty, skip.
+	if exists {
+		fmt.Printf("✓ %s-%s: Address already exists\n", assetConfig.Symbol, assetConfig.Network)
+		result.success = true
 		return result
 	}
 
@@ -197,6 +232,138 @@ func generateAddressesForUser(ctx context.Context, services *common.Services, us
 	return stats
 }
 
+// assignExistingAddress verifies and assigns an existing Prime deposit address to a user.
+func assignExistingAddress(ctx context.Context, services *common.Services, user *models.User, depositAddr string) {
+	fmt.Printf("\n🔍 Verifying deposit address: %s\n", depositAddr)
+
+	// 1. Check that no one already owns this address in the local store.
+	existingUser, _, err := services.DbService.FindUserByAddress(ctx, depositAddr)
+	if err == nil && existingUser != nil {
+		if existingUser.Id == user.Id {
+			fmt.Printf("✓ Address already assigned to this user\n")
+			return
+		}
+		fmt.Printf("❌ Address already belongs to user %s (%s)\n", existingUser.Name, existingUser.Email)
+		zap.L().Fatal("Deposit address already assigned to another user",
+			zap.String("address", depositAddr),
+			zap.String("owner_id", existingUser.Id),
+			zap.String("owner_email", existingUser.Email))
+	}
+
+	// 2. Verify the address exists on a Prime wallet and find which wallet/asset.
+	fmt.Println("🔍 Searching Prime wallets for this address...")
+	allWallets, err := services.PrimeService.ListWallets(ctx, services.DefaultPortfolio.Id, "TRADING", nil)
+	if err != nil {
+		zap.L().Fatal("Failed to list Prime wallets", zap.Error(err))
+	}
+
+	// Known networks to search across.
+	networks := []string{"ethereum-mainnet", "base-mainnet", "bitcoin-mainnet", "solana-mainnet", "polygon-mainnet", "arbitrum-mainnet", "avalanche-mainnet"}
+
+	var foundWallet *models.Wallet
+	var foundNetwork string
+	var foundAddr *models.DepositAddress
+
+	for i := range allWallets {
+		w := &allWallets[i]
+		for _, network := range networks {
+			addrs, listErr := services.PrimeService.ListWalletAddresses(ctx, services.DefaultPortfolio.Id, w.Id, network)
+			if listErr != nil {
+				continue
+			}
+			for j := range addrs {
+				if strings.EqualFold(addrs[j].Address, depositAddr) {
+					foundWallet = w
+					foundNetwork = network
+					foundAddr = &addrs[j]
+					break
+				}
+			}
+			if foundAddr != nil {
+				break
+			}
+		}
+		if foundAddr != nil {
+			break
+		}
+	}
+
+	if foundAddr == nil {
+		fmt.Printf("❌ Address not found on any Prime trading wallet\n")
+		zap.L().Fatal("Deposit address not found on Prime portfolio",
+			zap.String("address", depositAddr))
+	}
+
+	fmt.Printf("✓ Found on Prime: %s wallet (%s) on %s\n", foundWallet.Symbol, foundWallet.Id[:12]+"...", foundNetwork)
+
+	// 3. Store the address mapping.
+	_, err = services.DbService.StoreAddress(ctx, store.StoreAddressParams{
+		UserId:            user.Id,
+		Asset:             foundWallet.Symbol,
+		Network:           foundNetwork,
+		Address:           foundAddr.Address,
+		WalletId:          foundWallet.Id,
+		AccountIdentifier: foundAddr.Id,
+	})
+	if err != nil {
+		zap.L().Fatal("Failed to store address", zap.Error(err))
+	}
+
+	fmt.Printf("✓ Address assigned to %s (%s)\n\n", user.Name, user.Email)
+	zap.L().Info("Deposit address assigned to user",
+		zap.String("user_id", user.Id),
+		zap.String("address", depositAddr),
+		zap.String("asset", foundWallet.Symbol),
+		zap.String("network", foundNetwork))
+}
+
+// registerDestinationAddress stores an external withdrawal address. Looks up the
+// Prime address book to determine the asset, then stores with the correct symbol.
+func registerDestinationAddress(ctx context.Context, services *common.Services, user *models.User, destAddr string) {
+	// Check if already assigned to someone.
+	existingUser, _, err := services.DbService.FindUserByAddress(ctx, destAddr)
+	if err == nil && existingUser != nil {
+		if existingUser.Id == user.Id {
+			fmt.Printf("  ✓ %s (already registered)\n", destAddr)
+			return
+		}
+		fmt.Printf("  ❌ %s -- already belongs to %s (%s)\n", destAddr, existingUser.Name, existingUser.Email)
+		return
+	}
+
+	// Look up the address in Prime's address book to get the asset symbol.
+	asset := "WITHDRAWAL" // default if not found in address book
+	fmt.Printf("  🔍 Looking up %s in Prime address book...\n", destAddr)
+
+	entry, lookupErr := services.PrimeService.LookupAddressBook(ctx, services.DefaultPortfolio.Id, destAddr)
+	if lookupErr != nil {
+		zap.L().Debug("Address book lookup failed, using generic type",
+			zap.String("address", destAddr), zap.Error(lookupErr))
+	} else if entry != nil {
+		asset = entry.Symbol
+		fmt.Printf("  ✓ Found in address book: %s (%s, state: %s)\n", entry.Name, entry.Symbol, entry.State)
+	} else {
+		fmt.Printf("  ⚠ Not found in Prime address book, registering as generic withdrawal address\n")
+	}
+
+	_, err = services.DbService.StoreAddress(ctx, store.StoreAddressParams{
+		UserId:  user.Id,
+		Asset:   asset,
+		Network: "external",
+		Address: destAddr,
+	})
+	if err != nil {
+		fmt.Printf("  ❌ %s -- failed to register: %v\n", destAddr, err)
+		return
+	}
+
+	fmt.Printf("  ✓ %s registered (%s)\n", destAddr, asset)
+	zap.L().Info("Withdrawal address registered",
+		zap.String("user_id", user.Id),
+		zap.String("address", destAddr),
+		zap.String("asset", asset))
+}
+
 func main() {
 	ctx := context.Background()
 
@@ -206,11 +373,28 @@ func main() {
 	// Parse command line flags
 	nameFlag := flag.String("name", "", "User's full name (required)")
 	emailFlag := flag.String("email", "", "User's email address (required)")
+	depositAddrsFlag := flag.String("deposit-addresses", "", "Comma-separated existing Prime deposit addresses to assign (optional)")
+	destAddrsFlag := flag.String("withdrawal-addresses", "", "Comma-separated external withdrawal addresses for matching outgoing transactions (optional)")
 	flag.Parse()
+
+	// Check for stray positional args (common when comma-separated values have spaces).
+	if flag.NArg() > 0 {
+		fmt.Println("ERROR: Unexpected arguments detected:", flag.Args())
+		fmt.Println()
+		fmt.Println("If using comma-separated addresses, wrap in quotes:")
+		fmt.Println(`  --deposit-addresses "0xABC...,0xDEF..."`)
+		fmt.Println(`  --withdrawal-addresses "0x123...,0x456..."`)
+		os.Exit(1)
+	}
 
 	// Validate required flags
 	if *nameFlag == "" || *emailFlag == "" {
-		zap.L().Fatal("Both flags are required: --name and --email")
+		fmt.Println("Usage: adduser --name \"Full Name\" --email user@example.com [options]")
+		fmt.Println()
+		fmt.Println("Options:")
+		fmt.Println(`  --deposit-addresses "addr1,addr2"      Existing Prime deposit addresses`)
+		fmt.Println(`  --withdrawal-addresses "addr1,addr2"   External withdrawal addresses`)
+		os.Exit(1)
 	}
 
 	// Validate name
@@ -241,32 +425,72 @@ func main() {
 	}
 	defer services.Close()
 
-	// Generate UUID for the new user
-	userId := uuid.New().String()
+	// Check if a user with this email already exists -- reuse if so.
+	user, err := services.DbService.GetUserByEmail(ctx, *emailFlag)
+	if err == nil && user != nil {
+		fmt.Println()
+		common.PrintHeader("EXISTING USER FOUND", common.DefaultWidth)
+		fmt.Printf("ID:    %s\n", user.Id)
+		fmt.Printf("Name:  %s\n", user.Name)
+		fmt.Printf("Email: %s\n", user.Email)
+		common.PrintSeparator("=", common.DefaultWidth)
+		fmt.Println()
 
-	// Create user in database
-	zap.L().Info("Creating user in database",
-		zap.String("id", userId),
-		zap.String("name", *nameFlag),
-		zap.String("email", *emailFlag))
+		zap.L().Info("User already exists, continuing with address setup",
+			zap.String("id", user.Id), zap.String("email", user.Email))
+	} else {
+		// Create new user with a fresh UUID.
+		userId := uuid.New().String()
 
-	user, err := services.DbService.CreateUser(ctx, userId, *nameFlag, *emailFlag)
-	if err != nil {
-		if strings.Contains(err.Error(), "already exists") {
-			zap.L().Fatal("User already exists with this email", zap.String("email", *emailFlag))
+		zap.L().Info("Creating user",
+			zap.String("id", userId),
+			zap.String("name", *nameFlag),
+			zap.String("email", *emailFlag))
+
+		user, err = services.DbService.CreateUser(ctx, userId, *nameFlag, *emailFlag)
+		if err != nil {
+			zap.L().Fatal("Failed to create user", zap.Error(err))
 		}
-		zap.L().Fatal("Failed to create user", zap.Error(err))
+
+		fmt.Println()
+		common.PrintHeader("USER CREATED", common.DefaultWidth)
+		fmt.Printf("ID:    %s\n", user.Id)
+		fmt.Printf("Name:  %s\n", user.Name)
+		fmt.Printf("Email: %s\n", user.Email)
+		common.PrintSeparator("=", common.DefaultWidth)
+		fmt.Println()
+
+		zap.L().Info("User created successfully", zap.String("id", user.Id))
 	}
 
-	fmt.Println()
-	common.PrintHeader("USER CREATED", common.DefaultWidth)
-	fmt.Printf("ID:    %s\n", user.Id)
-	fmt.Printf("Name:  %s\n", user.Name)
-	fmt.Printf("Email: %s\n", user.Email)
-	common.PrintSeparator("=", common.DefaultWidth)
-	fmt.Println()
+	// If --deposit-addresses was provided, assign each one to this user.
+	hasExplicitDeposits := *depositAddrsFlag != ""
+	if hasExplicitDeposits {
+		for _, addr := range strings.Split(*depositAddrsFlag, ",") {
+			addr = strings.TrimSpace(addr)
+			if addr != "" {
+				assignExistingAddress(ctx, services, user, addr)
+			}
+		}
+	}
 
-	zap.L().Info("User created successfully", zap.String("id", user.Id))
+	// If --withdrawal-addresses was provided, register them for withdrawal matching.
+	if *destAddrsFlag != "" {
+		fmt.Println("Registering withdrawal addresses...")
+		for _, addr := range strings.Split(*destAddrsFlag, ",") {
+			addr = strings.TrimSpace(addr)
+			if addr != "" {
+				registerDestinationAddress(ctx, services, user, addr)
+			}
+		}
+	}
+
+	// Only auto-generate addresses from assets.yaml if no --deposit-addresses were specified.
+	if hasExplicitDeposits {
+		fmt.Println("\nDeposit addresses specified -- skipping automatic address generation.")
+		fmt.Println("Run 'go run cmd/setup/main.go' to discover and sync all addresses from Prime.")
+		return
+	}
 
 	// Load asset configuration
 	zap.L().Info("Loading asset configuration for address generation")

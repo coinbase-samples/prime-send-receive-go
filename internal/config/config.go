@@ -57,6 +57,13 @@ func Load() (*models.Config, error) {
 	}
 
 	return &models.Config{
+		BackendType: getEnvString("BACKEND_TYPE", "sqlite"),
+		Formance: models.FormanceConfig{
+			StackURL:     getEnvString("FORMANCE_STACK_URL", ""),
+			ClientID:     getEnvString("FORMANCE_CLIENT_ID", ""),
+			ClientSecret: getEnvString("FORMANCE_CLIENT_SECRET", ""),
+			LedgerName:   getEnvString("FORMANCE_LEDGER_NAME", "coinbase-prime-send-receive"),
+		},
 		Database: models.DatabaseConfig{
 			Path:             getEnvString("DATABASE_PATH", "addresses.db"),
 			MaxOpenConns:     getEnvInt("DB_MAX_OPEN_CONNS", 25),

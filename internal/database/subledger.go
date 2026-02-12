@@ -18,14 +18,15 @@ package database
 
 import (
 	"database/sql"
-	"errors"
+
+	"prime-send-receive-go/internal/store"
 )
 
-// Sentinel errors for database operations
+// Sentinel errors – aliases so existing callers that import database.Err* keep compiling.
 var (
-	ErrDuplicateTransaction   = errors.New("duplicate transaction")
-	ErrConcurrentModification = errors.New("concurrent modification detected")
-	ErrUserNotFound           = errors.New("no user found for address")
+	ErrDuplicateTransaction   = store.ErrDuplicateTransaction
+	ErrConcurrentModification = store.ErrConcurrentModification
+	ErrUserNotFound           = store.ErrUserNotFound
 )
 
 // SubledgerService handles subledger operations
