@@ -24,22 +24,70 @@ import (
 	"time"
 
 	"github.com/shopspring/decimal"
-	"go.uber.org/zap"
-	"prime-send-receive-go/internal/database"
 	"prime-send-receive-go/internal/models"
+	"prime-send-receive-go/internal/store"
+
+	"go.uber.org/zap"
 )
 
-// processDeposit processes a deposit transaction
+// processDeposit processes a deposit transaction in two phases:
+// Phase 1: TRANSACTION_IMPORT_PENDING -- park funds in pending deposits account
+// Phase 2: TRANSACTION_IMPORTED -- move from pending to user account
 func (d *SendReceiveListener) processDeposit(ctx context.Context, tx models.PrimeTransaction, wallet models.WalletInfo) error {
-	if tx.Status != "TRANSACTION_IMPORTED" {
-		zap.L().Debug("Skipping non-imported deposit - waiting for completion",
-			zap.String("transaction_id", tx.Id),
-			zap.String("status", tx.Status),
-			zap.String("symbol", tx.Symbol),
-			zap.String("amount", tx.Amount),
-			zap.Time("created_at", tx.CreatedAt))
+	if tx.Status == "TRANSACTION_IMPORT_PENDING" {
+		return d.processDepositPending(ctx, tx, wallet)
+	}
+
+	if tx.Status == "TRANSACTION_IMPORTED" {
+		return d.processDepositConfirmed(ctx, tx, wallet)
+	}
+
+	zap.L().Debug("Skipping deposit with unhandled status",
+		zap.String("transaction_id", tx.Id),
+		zap.String("status", tx.Status),
+		zap.String("symbol", tx.Symbol),
+		zap.String("amount", tx.Amount))
+	return nil
+}
+
+// processDepositPending handles phase 1: park funds in pending.
+func (d *SendReceiveListener) processDepositPending(ctx context.Context, tx models.PrimeTransaction, wallet models.WalletInfo) error {
+	amount, err := decimal.NewFromString(tx.Amount)
+	if err != nil {
+		return fmt.Errorf("invalid amount: %w", err)
+	}
+	if amount.LessThanOrEqual(decimal.Zero) {
 		return nil
 	}
+
+	canonicalSymbol := normalizeSymbol(tx.Symbol)
+
+	var lookupAddress string
+	if tx.TransferTo.AccountIdentifier != "" {
+		lookupAddress = tx.TransferTo.AccountIdentifier
+	} else if tx.TransferTo.Address != "" {
+		lookupAddress = tx.TransferTo.Address
+	}
+
+	err = d.dbService.ProcessDepositPending(ctx, canonicalSymbol, wallet.Id, amount, tx.Id, lookupAddress)
+	if err != nil {
+		if errors.Is(err, store.ErrDuplicateTransaction) {
+			d.markTransactionProcessed(tx.Id)
+			return nil
+		}
+		return fmt.Errorf("failed to record pending deposit: %w", err)
+	}
+
+	d.markTransactionProcessed(tx.Id)
+	zap.L().Info("Pending deposit recorded",
+		zap.String("transaction_id", tx.Id),
+		zap.String("symbol", canonicalSymbol),
+		zap.String("amount", amount.String()))
+	return nil
+}
+
+// processDepositConfirmed handles phase 2: move from pending to user (or direct deposit).
+func (d *SendReceiveListener) processDepositConfirmed(ctx context.Context, tx models.PrimeTransaction, wallet models.WalletInfo) error {
 
 	amount, err := decimal.NewFromString(tx.Amount)
 	if err != nil {
@@ -90,17 +138,56 @@ func (d *SendReceiveListener) processDeposit(ctx context.Context, tx models.Prim
 		zap.Time("created_at", tx.CreatedAt),
 		zap.Time("completed_at", tx.CompletedAt))
 
-	// Pass Prime API symbol to ledger - ProcessDeposit will use canonical symbol from address lookup
-	// This handles cases where Prime API returns "BASEUSDC" but we store as "USDC" with network="base-mainnet"
-	result, err := d.apiService.ProcessDeposit(ctx, lookupAddress, tx.Symbol, amount, tx.Id)
+	// Resolve source address from TransferFrom -- Prime uses Address, Value, or
+	// AccountIdentifier depending on the transfer type and network.
+	sourceAddr := tx.TransferFrom.Address
+	if sourceAddr == "" {
+		sourceAddr = tx.TransferFrom.Value
+	}
+	if sourceAddr == "" {
+		sourceAddr = tx.TransferFrom.AccountIdentifier
+	}
+
+	// Attach full Prime transaction context for rich metadata in the Formance backend.
+	// Use CompletedAt as the effective transaction time; fall back to CreatedAt.
+	txTime := tx.CompletedAt
+	if txTime.IsZero() {
+		txTime = tx.CreatedAt
+	}
+
+	depositCtx := models.WithPrimeDepositContext(ctx, &models.PrimeDepositContext{
+		TransactionId:   tx.TransactionId,
+		SourceAddress:   sourceAddr,
+		SourceType:      tx.TransferFrom.Type,
+		NetworkFees:     tx.NetworkFees,
+		Fees:            tx.Fees,
+		BlockchainIds:   tx.BlockchainIds,
+		Network:         tx.Network,
+		PrimeApiSymbol:  tx.Symbol,
+		WalletId:        tx.WalletId,
+		CreatedAt:       tx.CreatedAt.UTC().Format(time.RFC3339),
+		CompletedAt:     tx.CompletedAt.UTC().Format(time.RFC3339),
+		TransactionTime: txTime,
+	})
+
+	// Try two-phase: confirm from pending -> user (if pending phase was recorded).
+	confirmErr := d.dbService.ConfirmDeposit(depositCtx, lookupAddress, tx.Symbol, amount, tx.Id)
+	if confirmErr == nil {
+		d.markTransactionProcessed(tx.Id)
+		zap.L().Info("Deposit confirmed (pending -> user)",
+			zap.String("transaction_id", tx.Id))
+		return nil
+	}
+	// Fall back to single-phase direct deposit (no pending phase existed).
+	result, err := d.apiService.ProcessDeposit(depositCtx, lookupAddress, tx.Symbol, amount, tx.Id)
 	if err != nil {
-		if errors.Is(err, database.ErrDuplicateTransaction) {
+		if errors.Is(err, store.ErrDuplicateTransaction) {
 			zap.L().Info("Duplicate transaction detected - already processed, marking as handled",
 				zap.String("transaction_id", tx.Id))
 			d.markTransactionProcessed(tx.Id)
 			return nil
 		}
-		if errors.Is(err, database.ErrUserNotFound) {
+		if errors.Is(err, store.ErrUserNotFound) {
 			zap.L().Warn("Deposit to unrecognized address - marking as processed to avoid repeated errors",
 				zap.String("transaction_id", tx.Id),
 				zap.String("address", lookupAddress),
@@ -114,14 +201,14 @@ func (d *SendReceiveListener) processDeposit(ctx context.Context, tx models.Prim
 
 	if !result.Success {
 		// Check if this is a duplicate transaction error (result.Error is a plain string)
-		if result.Error == database.ErrDuplicateTransaction.Error() {
+		if result.Error == store.ErrDuplicateTransaction.Error() {
 			zap.L().Info("Duplicate transaction detected - already processed, marking as handled",
 				zap.String("transaction_id", tx.Id))
 			d.markTransactionProcessed(tx.Id)
 			return nil
 		}
 		// Check if this is an unrecognized address
-		if result.Error == database.ErrUserNotFound.Error() {
+		if result.Error == store.ErrUserNotFound.Error() {
 			zap.L().Warn("Deposit to unrecognized address - marking as processed to avoid repeated errors",
 				zap.String("transaction_id", tx.Id),
 				zap.String("error", result.Error))

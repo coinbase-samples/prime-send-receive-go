@@ -20,7 +20,7 @@ import (
 	"context"
 	"fmt"
 
-	"prime-send-receive-go/internal/database"
+	"prime-send-receive-go/internal/store"
 
 	"go.uber.org/zap"
 )
@@ -35,7 +35,7 @@ type UserInfo struct {
 // InitializeUsers retrieves users based on an optional email filter.
 // If emailFilter is provided, returns a single user with that email.
 // If emailFilter is empty, returns all users.
-func InitializeUsers(ctx context.Context, dbService *database.Service, emailFilter string, logger *zap.Logger) ([]UserInfo, error) {
+func InitializeUsers(ctx context.Context, dbService store.LedgerStore, emailFilter string, logger *zap.Logger) ([]UserInfo, error) {
 	var users []UserInfo
 
 	if emailFilter != "" {

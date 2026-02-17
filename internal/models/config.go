@@ -20,8 +20,18 @@ import "time"
 
 // Config represents the application configuration
 type Config struct {
-	Database DatabaseConfig
-	Listener ListenerConfig
+	BackendType string // "sqlite" (default) or "formance"
+	Database    DatabaseConfig
+	Formance    FormanceConfig
+	Listener    ListenerConfig
+}
+
+// FormanceConfig holds Formance Stack connection settings.
+type FormanceConfig struct {
+	StackURL     string
+	ClientID     string
+	ClientSecret string
+	LedgerName   string
 }
 
 // DatabaseConfig holds database connection settings

@@ -22,8 +22,10 @@ import (
 	"sync"
 	"time"
 
-	"go.uber.org/zap"
 	"prime-send-receive-go/internal/models"
+	"prime-send-receive-go/internal/store"
+
+	"go.uber.org/zap"
 )
 
 // Start begins the deposit monitoring process
@@ -85,27 +87,33 @@ func (d *SendReceiveListener) pollLoop(ctx context.Context) {
 	}
 }
 
+// ANSI color helpers for console output.
+const (
+	colorReset  = "\033[0m"
+	colorRed    = "\033[31m"
+	colorGreen  = "\033[32m"
+	colorYellow = "\033[33m"
+	colorCyan   = "\033[36m"
+	colorGray   = "\033[90m"
+)
+
 // pollWallets polls all monitored wallets for new transactions
 func (d *SendReceiveListener) pollWallets(ctx context.Context) {
-	zap.L().Info("Starting wallet polling cycle",
-		zap.Int("wallet_count", len(d.monitoredWallets)),
-		zap.Duration("lookback_window", d.lookbackWindow))
-
-	// Calculate time window for this poll
 	since := time.Now().UTC().Add(-d.lookbackWindow)
-	zap.L().Info("Polling for transactions since",
-		zap.Time("since", since))
+
+	fmt.Printf("\n%s[%s] Polling %d wallets (lookback: %s)%s\n",
+		colorCyan, time.Now().Format("15:04:05"), len(d.monitoredWallets), d.lookbackWindow, colorReset)
 
 	var wg sync.WaitGroup
 
 	for _, wallet := range d.monitoredWallets {
 		wg.Add(1)
 
-		// Poll each wallet concurrently
 		go func(w models.WalletInfo) {
 			defer wg.Done()
 
 			if err := d.pollWallet(ctx, w, since); err != nil {
+				fmt.Printf("  %s✗ %s (%s): %s%s\n", colorRed, w.AssetSymbol, w.Id[:8], err, colorReset)
 				zap.L().Error("Failed to poll wallet",
 					zap.String("wallet_id", w.Id),
 					zap.String("asset_symbol", w.AssetSymbol),
@@ -115,71 +123,174 @@ func (d *SendReceiveListener) pollWallets(ctx context.Context) {
 	}
 
 	wg.Wait()
-
-	zap.L().Info("Wallet polling cycle complete")
 }
 
 // pollWallet polls a specific wallet for new transactions
 func (d *SendReceiveListener) pollWallet(ctx context.Context, wallet models.WalletInfo, since time.Time) error {
-	zap.L().Info("Polling wallet for transactions",
-		zap.String("wallet_id", wallet.Id),
-		zap.String("asset_symbol", wallet.AssetSymbol),
-		zap.Time("since", since))
-
-	// Fetch transactions from Prime API
 	transactions, err := d.fetchWalletTransactions(ctx, wallet.Id, since)
 	if err != nil {
-		return fmt.Errorf("failed to fetch wallet transactions: %w", err)
+		return fmt.Errorf("failed to fetch transactions: %w", err)
 	}
 
-	zap.L().Info("Fetched wallet transactions",
-		zap.String("wallet_id", wallet.Id),
-		zap.String("asset_symbol", wallet.AssetSymbol),
-		zap.Int("transaction_count", len(transactions)))
-
-	for i, tx := range transactions {
+	newCount := 0
+	for _, tx := range transactions {
 		if d.isTransactionProcessed(tx.Id) {
 			continue
 		}
+		newCount++
 
-		zap.L().Info("Processing transaction",
-			zap.Int("tx_index", i+1),
-			zap.Int("total_txs", len(transactions)),
-			zap.String("transaction_id", tx.Id),
-			zap.String("type", tx.Type),
-			zap.String("status", tx.Status),
-			zap.String("symbol", tx.Symbol),
-			zap.String("amount", tx.Amount))
+		txIdShort := tx.Id
+		if len(txIdShort) > 12 {
+			txIdShort = txIdShort[:12] + "..."
+		}
 
 		if err := d.processTransaction(ctx, tx, wallet); err != nil {
+			fmt.Printf("  %s✗ %s %s %s %s | %s %s | %s%s\n",
+				colorRed, wallet.AssetSymbol, tx.Type, tx.Status, tx.Amount,
+				txIdShort, tx.Network, err, colorReset)
 			zap.L().Error("Failed to process transaction",
 				zap.String("transaction_id", tx.Id),
 				zap.String("wallet_id", wallet.Id),
 				zap.Error(err))
+		} else {
+			color := colorGreen
+			symbol := "✓"
+			if tx.Type != "DEPOSIT" && tx.Type != "WITHDRAWAL" {
+				color = colorYellow
+				symbol = "~"
+			}
+			fmt.Printf("  %s%s %s %s %s %s | %s %s%s\n",
+				color, symbol, wallet.AssetSymbol, tx.Type, tx.Status, tx.Amount,
+				txIdShort, tx.Network, colorReset)
 		}
+	}
+
+	if newCount == 0 && len(transactions) > 0 {
+		zap.L().Debug("All transactions already processed",
+			zap.String("wallet_id", wallet.Id),
+			zap.String("asset", wallet.AssetSymbol),
+			zap.Int("total", len(transactions)))
 	}
 
 	return nil
 }
 
-// processTransaction processes a single Prime transaction (deposit or withdrawal)
+// processTransaction processes a single Prime transaction
 func (d *SendReceiveListener) processTransaction(ctx context.Context, tx models.PrimeTransaction, wallet models.WalletInfo) error {
 	if d.isTransactionProcessed(tx.Id) {
-		zap.L().Debug("Transaction already processed, skipping",
-			zap.String("transaction_id", tx.Id))
 		return nil
 	}
 
-	if tx.Type == "DEPOSIT" {
+	switch tx.Type {
+	case "DEPOSIT":
 		return d.processDeposit(ctx, tx, wallet)
-	} else if tx.Type == "WITHDRAWAL" {
+	case "WITHDRAWAL":
 		return d.processWithdrawal(ctx, tx, wallet)
-	} else {
-		zap.L().Debug("Skipping unsupported transaction type",
-			zap.String("transaction_id", tx.Id),
-			zap.String("type", tx.Type))
+	case "CONVERSION":
+		return d.processConversion(ctx, tx, wallet)
+	default:
+		txTime := tx.CompletedAt
+		if txTime.IsZero() {
+			txTime = tx.CreatedAt
+		}
+		err := d.dbService.RecordPlatformTransaction(ctx, store.PlatformTransactionParams{
+			TransactionId:   tx.Id,
+			Type:            tx.Type,
+			Status:          tx.Status,
+			Symbol:          tx.Symbol,
+			Amount:          tx.Amount,
+			Network:         tx.Network,
+			WalletId:        wallet.Id,
+			TransactionTime: txTime,
+			Metadata: map[string]string{
+				"idempotency_key": tx.IdempotencyKey,
+				"transaction_id":  tx.TransactionId,
+			},
+		})
+		if err != nil {
+			return fmt.Errorf("failed to record %s transaction: %w", tx.Type, err)
+		}
+		d.markTransactionProcessed(tx.Id)
 		return nil
 	}
+}
+
+// processConversion handles a CONVERSION transaction (e.g. USD -> USDC).
+// tx.Symbol is the source asset, tx.DestinationSymbol is the target asset.
+// The wallets are resolved by looking up each asset on the Prime portfolio,
+// not by assuming the polling wallet is the source.
+func (d *SendReceiveListener) processConversion(ctx context.Context, tx models.PrimeTransaction, pollingWallet models.WalletInfo) error {
+	if tx.Status != "TRANSACTION_DONE" {
+		zap.L().Debug("Skipping non-completed conversion",
+			zap.String("transaction_id", tx.Id),
+			zap.String("status", tx.Status))
+		return nil
+	}
+
+	sourceSymbol := tx.Symbol
+	destSymbol := tx.DestinationSymbol
+	if destSymbol == "" {
+		destSymbol = sourceSymbol
+	}
+
+	// Resolve the SOURCE wallet by the source asset symbol.
+	sourceWalletId := pollingWallet.Id // default if lookup fails
+	if sourceSymbol == pollingWallet.AssetSymbol {
+		sourceWalletId = pollingWallet.Id
+	} else {
+		srcWallets, err := d.primeService.ListWallets(ctx, d.portfolioId, "TRADING", []string{sourceSymbol})
+		if err == nil && len(srcWallets) > 0 {
+			sourceWalletId = srcWallets[0].Id
+		}
+	}
+
+	// Resolve the DESTINATION wallet by the destination asset symbol.
+	destWalletId := pollingWallet.Id // default if lookup fails
+	if destSymbol == pollingWallet.AssetSymbol {
+		destWalletId = pollingWallet.Id
+	} else {
+		dstWallets, err := d.primeService.ListWallets(ctx, d.portfolioId, "TRADING", []string{destSymbol})
+		if err == nil && len(dstWallets) > 0 {
+			destWalletId = dstWallets[0].Id
+		} else {
+			zap.L().Warn("Could not find destination wallet for conversion",
+				zap.String("destination_symbol", destSymbol))
+		}
+	}
+
+	zap.L().Info("Processing conversion",
+		zap.String("transaction_id", tx.Id),
+		zap.String("source", sourceSymbol),
+		zap.String("destination", destSymbol),
+		zap.String("source_wallet", sourceWalletId),
+		zap.String("dest_wallet", destWalletId),
+		zap.String("amount", tx.Amount))
+
+	txTime := tx.CompletedAt
+	if txTime.IsZero() {
+		txTime = tx.CreatedAt
+	}
+
+	err := d.dbService.RecordConversion(ctx, store.ConversionParams{
+		TransactionId:     tx.Id,
+		Status:            tx.Status,
+		SourceSymbol:      sourceSymbol,
+		SourceAmount:      tx.Amount,
+		DestinationSymbol: destSymbol,
+		DestinationAmount: tx.Amount,
+		SourceWalletId:    sourceWalletId,
+		DestWalletId:      destWalletId,
+		Network:           tx.Network,
+		Fees:              tx.Fees,
+		FeeSymbol:         tx.FeeSymbol,
+		TransactionTime:   txTime,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to record conversion: %w", err)
+	}
+
+	d.markTransactionProcessed(tx.Id)
+	return nil
 }
 
 // performStartupRecovery checks for missed transactions during downtime

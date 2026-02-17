@@ -34,16 +34,22 @@ type PrimeTransferInfo struct {
 
 // PrimeTransaction represents a transaction from Prime API with complete fields
 type PrimeTransaction struct {
-	Id             string            `json:"id"`
-	WalletId       string            `json:"wallet_id"`
-	Type           string            `json:"type"`
-	Status         string            `json:"status"`
-	Symbol         string            `json:"symbol"`
-	Amount         string            `json:"amount"`
-	CreatedAt      time.Time         `json:"created_at"`
-	CompletedAt    time.Time         `json:"completed_at"`
-	TransferTo     PrimeTransferInfo `json:"transfer_to"`
-	TransactionId  string            `json:"transaction_id"`
-	Network        string            `json:"network"`
-	IdempotencyKey string            `json:"idempotency_key"`
+	Id                string            `json:"id"`
+	WalletId          string            `json:"wallet_id"`
+	Type              string            `json:"type"`
+	Status            string            `json:"status"`
+	Symbol            string            `json:"symbol"`
+	DestinationSymbol string            `json:"destination_symbol"`
+	Amount            string            `json:"amount"`
+	CreatedAt         time.Time         `json:"created_at"`
+	CompletedAt       time.Time         `json:"completed_at"`
+	TransferFrom      PrimeTransferInfo `json:"transfer_from"`
+	TransferTo        PrimeTransferInfo `json:"transfer_to"`
+	TransactionId     string            `json:"transaction_id"`
+	Network           string            `json:"network"`
+	NetworkFees       string            `json:"network_fees"`
+	Fees              string            `json:"fees"`
+	FeeSymbol         string            `json:"fee_symbol"`
+	BlockchainIds     []string          `json:"blockchain_ids"`
+	IdempotencyKey    string            `json:"idempotency_key"`
 }

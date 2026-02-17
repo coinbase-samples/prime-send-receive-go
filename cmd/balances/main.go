@@ -23,9 +23,10 @@ import (
 
 	"prime-send-receive-go/internal/common"
 	"prime-send-receive-go/internal/config"
-	"prime-send-receive-go/internal/database"
 	"prime-send-receive-go/internal/models"
+	"prime-send-receive-go/internal/store"
 
+	"github.com/shopspring/decimal"
 	"go.uber.org/zap"
 )
 
@@ -39,40 +40,105 @@ func formatTransactionId(txId string) string {
 	if txId == "" {
 		return "none"
 	}
-	if len(txId) > 8 {
-		return txId[:8] + "..."
+	if len(txId) > 16 {
+		return txId[:16] + "..."
 	}
 	return txId
 }
 
 func printBalance(balance models.AccountBalance, isLast bool) {
-	symbol := common.BoxPrefix(isLast)
-	lastTx := formatTransactionId(balance.LastTransactionId)
+	prefix := common.BoxPrefix(isLast)
 
-	fmt.Printf("%s %-15s: %20s (v%d, last_tx: %s, updated: %s)\n",
-		symbol,
-		balance.Asset,
-		balance.Balance.String(),
-		balance.Version,
-		lastTx,
-		balance.UpdatedAt.Format("2006-01-02 15:04:05"))
-}
-
-func printBalances(balances []models.AccountBalance) {
-	for i, balance := range balances {
-		isLast := i == len(balances)-1
-		printBalance(balance, isLast)
+	if balance.Network != "" {
+		// Formance: per-network balance with last transaction reference.
+		lastTx := formatTransactionId(balance.LastTransactionId)
+		fmt.Printf("%s %-6s on %-20s: %15s  (last_tx: %s, updated: %s)\n",
+			prefix,
+			balance.Asset,
+			balance.Network,
+			balance.Balance.String(),
+			lastTx,
+			balance.UpdatedAt.Format("2006-01-02 15:04:05"))
+	} else {
+		// SQLite: aggregated balance with version info.
+		lastTx := formatTransactionId(balance.LastTransactionId)
+		fmt.Printf("%s %-15s: %20s (v%d, last_tx: %s, updated: %s)\n",
+			prefix,
+			balance.Asset,
+			balance.Balance.String(),
+			balance.Version,
+			lastTx,
+			balance.UpdatedAt.Format("2006-01-02 15:04:05"))
 	}
 }
 
-func printUserHeader(user common.UserInfo, balanceCount int) {
+func printBalances(balances []models.AccountBalance) {
+	// Group by asset to show per-network detail then total.
+	type assetGroup struct {
+		entries []models.AccountBalance
+		total   decimal.Decimal
+	}
+	groups := make(map[string]*assetGroup)
+	var assetOrder []string
+
+	for _, b := range balances {
+		g, ok := groups[b.Asset]
+		if !ok {
+			g = &assetGroup{}
+			groups[b.Asset] = g
+			assetOrder = append(assetOrder, b.Asset)
+		}
+		g.entries = append(g.entries, b)
+		g.total = g.total.Add(b.Balance)
+	}
+
+	for ai, asset := range assetOrder {
+		g := groups[asset]
+		isLastAsset := ai == len(assetOrder)-1
+
+		for _, b := range g.entries {
+			printBalance(b, false)
+		}
+		// Print total for this asset.
+		prefix := common.BoxPrefix(isLastAsset)
+		if len(g.entries) > 1 || g.entries[0].Network != "" {
+			fmt.Printf("%s TOTAL: %s %s\n", prefix, g.total.String(), asset)
+		}
+	}
+}
+
+// countUniqueAssets returns the number of distinct asset symbols.
+func countUniqueAssets(balances []models.AccountBalance) int {
+	seen := make(map[string]bool)
+	for _, b := range balances {
+		seen[b.Asset] = true
+	}
+	return len(seen)
+}
+
+// hasNetworkDetail returns true if any balance has network info (Formance).
+func hasNetworkDetail(balances []models.AccountBalance) bool {
+	for _, b := range balances {
+		if b.Network != "" {
+			return true
+		}
+	}
+	return false
+}
+
+func printUserHeader(user common.UserInfo, balances []models.AccountBalance) {
+	uniqueAssets := countUniqueAssets(balances)
 	fmt.Printf("\n┌─ User: %s (%s)\n", user.Name, user.Email)
 	fmt.Printf("│  ID: %s\n", user.Id)
-	fmt.Printf("│  Assets: %d\n", balanceCount)
+	if hasNetworkDetail(balances) {
+		fmt.Printf("│  Assets: %d (across %d accounts)\n", uniqueAssets, len(balances))
+	} else {
+		fmt.Printf("│  Assets: %d\n", uniqueAssets)
+	}
 	common.PrintBoxSeparator(78)
 }
 
-func processUser(ctx context.Context, user common.UserInfo, dbService *database.Service, logger *zap.Logger) (int, error) {
+func processUser(ctx context.Context, user common.UserInfo, dbService store.LedgerStore, logger *zap.Logger) (int, error) {
 	balances, err := dbService.GetAllUserBalances(ctx, user.Id)
 	if err != nil {
 		return 0, fmt.Errorf("failed to get balances: %w", err)
@@ -82,13 +148,13 @@ func processUser(ctx context.Context, user common.UserInfo, dbService *database.
 		return 0, nil
 	}
 
-	printUserHeader(user, len(balances))
+	printUserHeader(user, balances)
 	printBalances(balances)
 
 	return len(balances), nil
 }
 
-func processUsersAndGenerateReport(ctx context.Context, users []common.UserInfo, dbService *database.Service, logger *zap.Logger) balanceStats {
+func processUsersAndGenerateReport(ctx context.Context, users []common.UserInfo, dbService store.LedgerStore, logger *zap.Logger) balanceStats {
 	stats := balanceStats{}
 
 	for _, user := range users {

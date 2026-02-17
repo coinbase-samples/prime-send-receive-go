@@ -38,6 +38,15 @@ type DepositAddress struct {
 	Asset   string
 }
 
+// AddressBookEntry represents a Prime address book entry
+type AddressBookEntry struct {
+	Id      string
+	Symbol  string
+	Name    string
+	Address string
+	State   string
+}
+
 // Withdrawal represents a Prime withdrawal transaction
 type Withdrawal struct {
 	ActivityId     string

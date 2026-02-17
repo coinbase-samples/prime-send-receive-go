@@ -20,9 +20,10 @@ import (
 	"context"
 	"errors"
 
-	"github.com/shopspring/decimal"
-	"prime-send-receive-go/internal/database"
 	"prime-send-receive-go/internal/models"
+	"prime-send-receive-go/internal/store"
+
+	"github.com/shopspring/decimal"
 
 	"go.uber.org/zap"
 )
@@ -43,7 +44,7 @@ func (s *LedgerService) ProcessWithdrawal(ctx context.Context, userId, asset str
 
 	err := s.db.ProcessWithdrawal(ctx, userId, asset, amount, externalTxId)
 	if err != nil {
-		if errors.Is(err, database.ErrDuplicateTransaction) {
+		if errors.Is(err, store.ErrDuplicateTransaction) {
 			zap.L().Info("Duplicate withdrawal detected in API service",
 				zap.String("user_id", userId),
 				zap.String("asset_network", asset),
@@ -102,6 +103,32 @@ func (s *LedgerService) ProcessWithdrawal(ctx context.Context, userId, asset str
 	}, nil
 }
 
+// ConfirmWithdrawal settles a completed withdrawal (TRANSACTION_DONE).
+// For Formance this moves funds from pending to the portfolio wallet.
+// For SQLite this is a no-op (balance was already debited by ProcessWithdrawal).
+func (s *LedgerService) ConfirmWithdrawal(ctx context.Context, userId, asset string, amount decimal.Decimal, withdrawalRef, externalTxId string) error {
+	zap.L().Info("Confirming withdrawal settlement",
+		zap.String("user_id", userId),
+		zap.String("asset", asset),
+		zap.String("amount", amount.String()),
+		zap.String("external_tx_id", externalTxId))
+
+	err := s.db.ConfirmWithdrawal(ctx, userId, asset, amount, withdrawalRef, externalTxId)
+	if err != nil {
+		if errors.Is(err, store.ErrDuplicateTransaction) {
+			zap.L().Info("Withdrawal confirmation already processed",
+				zap.String("external_tx_id", externalTxId))
+			return nil
+		}
+		zap.L().Error("Withdrawal confirmation failed",
+			zap.String("user_id", userId),
+			zap.String("external_tx_id", externalTxId),
+			zap.Error(err))
+		return err
+	}
+	return nil
+}
+
 // CreditBackFailedWithdrawal credits back a withdrawal that failed (e.g., TRANSACTION_FAILED, TRANSACTION_CANCELLED)
 func (s *LedgerService) CreditBackFailedWithdrawal(ctx context.Context, userId, asset string, amount decimal.Decimal, originalTxId string) (*models.DepositResult, error) {
 	if userId == "" || asset == "" || amount.LessThanOrEqual(decimal.Zero) || originalTxId == "" {
@@ -119,7 +146,7 @@ func (s *LedgerService) CreditBackFailedWithdrawal(ctx context.Context, userId, 
 
 	err := s.db.ReverseWithdrawal(ctx, userId, asset, amount, originalTxId)
 	if err != nil {
-		if errors.Is(err, database.ErrDuplicateTransaction) {
+		if errors.Is(err, store.ErrDuplicateTransaction) {
 			zap.L().Info("Duplicate credit-back detected in API service",
 				zap.String("user_id", userId),
 				zap.String("asset_network", asset),

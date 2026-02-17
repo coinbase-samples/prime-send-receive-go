@@ -25,9 +25,9 @@ import (
 
 	"prime-send-receive-go/internal/api"
 	"prime-send-receive-go/internal/common"
-	"prime-send-receive-go/internal/database"
 	"prime-send-receive-go/internal/models"
 	"prime-send-receive-go/internal/prime"
+	"prime-send-receive-go/internal/store"
 
 	"go.uber.org/zap"
 )
@@ -36,7 +36,7 @@ import (
 type SendReceiveListenerConfig struct {
 	PrimeService    *prime.Service
 	ApiService      *api.LedgerService
-	DbService       *database.Service
+	DbService       store.LedgerStore
 	PortfolioId     string
 	LookbackWindow  time.Duration
 	PollingInterval time.Duration
@@ -47,7 +47,7 @@ type SendReceiveListenerConfig struct {
 type SendReceiveListener struct {
 	primeService *prime.Service
 	apiService   *api.LedgerService
-	dbService    *database.Service
+	dbService    store.LedgerStore
 
 	// State management for processed transactions
 	processedTxIds  map[string]time.Time
@@ -89,7 +89,7 @@ func getUniqueAssetSymbols(assetConfigs []common.AssetConfig) map[string]bool {
 	return assetSymbols
 }
 
-func getUserAddresses(ctx context.Context, dbService *database.Service, userId string) ([]models.Address, error) {
+func getUserAddresses(ctx context.Context, dbService store.LedgerStore, userId string) ([]models.Address, error) {
 	addresses, err := dbService.GetAllUserAddresses(ctx, userId)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get addresses: %w", err)
@@ -110,7 +110,7 @@ func extractWalletsFromAddresses(addresses []models.Address, assetSymbols map[st
 	return walletMap
 }
 
-func collectWalletsFromAllUsers(ctx context.Context, dbService *database.Service, users []models.User, assetSymbols map[string]bool) map[string]models.WalletInfo {
+func collectWalletsFromAllUsers(ctx context.Context, dbService store.LedgerStore, users []models.User, assetSymbols map[string]bool) map[string]models.WalletInfo {
 	allWallets := make(map[string]models.WalletInfo)
 
 	for _, user := range users {
@@ -131,43 +131,111 @@ func collectWalletsFromAllUsers(ctx context.Context, dbService *database.Service
 	return allWallets
 }
 
-// LoadMonitoredWallets loads the list of trading wallets from the database
+// LoadMonitoredWallets discovers trading wallets to monitor.
+// If assetsFile is empty, discovers ALL wallets from the Prime portfolio.
+// If assetsFile is provided, only monitors wallets for the assets listed in that file.
 func (d *SendReceiveListener) LoadMonitoredWallets(ctx context.Context, assetsFile string) error {
-	zap.L().Info("Loading monitored wallets from database")
+	if assetsFile != "" {
+		return d.loadFilteredWallets(ctx, assetsFile)
+	}
+	return d.loadAllWallets(ctx, assetsFile)
+}
 
-	// Load asset configs from file
+// loadAllWallets discovers ALL trading wallets from Prime.
+func (d *SendReceiveListener) loadAllWallets(ctx context.Context, assetsFileFallback string) error {
+	zap.L().Info("Discovering ALL wallets from Prime portfolio",
+		zap.String("portfolio_id", d.portfolioId))
+
+	allWallets, err := d.primeService.ListWallets(ctx, d.portfolioId, "TRADING", nil)
+	if err == nil && len(allWallets) > 0 {
+		d.monitoredWallets = make([]models.WalletInfo, 0, len(allWallets))
+		seen := make(map[string]bool)
+		for _, w := range allWallets {
+			if !seen[w.Id] {
+				seen[w.Id] = true
+				d.monitoredWallets = append(d.monitoredWallets, models.WalletInfo{
+					Id:          w.Id,
+					AssetSymbol: w.Symbol,
+				})
+			}
+		}
+
+		zap.L().Info("Monitoring ALL Prime wallets",
+			zap.Int("count", len(d.monitoredWallets)))
+		for _, w := range d.monitoredWallets {
+			zap.L().Info("  Wallet",
+				zap.String("id", w.Id),
+				zap.String("asset", w.AssetSymbol))
+		}
+		return nil
+	}
+
+	// Fallback to assets.yaml + local store if Prime call failed.
+	if err != nil {
+		zap.L().Warn("Could not discover wallets from Prime, falling back to local store",
+			zap.Error(err))
+	}
+	return d.loadFilteredWallets(ctx, assetsFileFallback)
+}
+
+// loadFilteredWallets monitors only wallets matching assets in the given file.
+func (d *SendReceiveListener) loadFilteredWallets(ctx context.Context, assetsFile string) error {
+	if assetsFile == "" {
+		assetsFile = "assets.yaml"
+	}
+
+	zap.L().Info("Loading filtered wallets from assets file",
+		zap.String("file", assetsFile))
+
 	assetConfigs, err := common.LoadAssetConfig(assetsFile)
 	if err != nil {
-		return fmt.Errorf("failed to load assets from YAML: %w", err)
+		return fmt.Errorf("failed to load assets from %s: %w", assetsFile, err)
 	}
 
-	zap.L().Info("Loaded assets from file",
-		zap.String("file", assetsFile),
-		zap.Int("count", len(assetConfigs)))
+	// Try Prime first with specific symbols.
+	symbols := make([]string, 0, len(assetConfigs))
+	seen := make(map[string]bool)
+	for _, ac := range assetConfigs {
+		if !seen[ac.Symbol] {
+			seen[ac.Symbol] = true
+			symbols = append(symbols, ac.Symbol)
+		}
+	}
 
-	// Get unique asset symbols
+	wallets, err := d.primeService.ListWallets(ctx, d.portfolioId, "TRADING", symbols)
+	if err == nil && len(wallets) > 0 {
+		d.monitoredWallets = make([]models.WalletInfo, 0, len(wallets))
+		walletSeen := make(map[string]bool)
+		for _, w := range wallets {
+			if !walletSeen[w.Id] {
+				walletSeen[w.Id] = true
+				d.monitoredWallets = append(d.monitoredWallets, models.WalletInfo{
+					Id:          w.Id,
+					AssetSymbol: w.Symbol,
+				})
+			}
+		}
+		zap.L().Info("Monitoring filtered Prime wallets",
+			zap.Int("count", len(d.monitoredWallets)),
+			zap.Strings("symbols", symbols))
+		return nil
+	}
+
+	// Fallback: local store.
 	assetSymbols := getUniqueAssetSymbols(assetConfigs)
-	zap.L().Info("Unique assets to monitor", zap.Int("count", len(assetSymbols)))
-
-	// Query all users
-	users, err := d.dbService.GetUsers(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to get users: %w", err)
+	users, userErr := d.dbService.GetUsers(ctx)
+	if userErr != nil {
+		return fmt.Errorf("failed to get users: %w", userErr)
 	}
 
-	// Collect wallets from all users
 	walletMap := collectWalletsFromAllUsers(ctx, d.dbService, users, assetSymbols)
-
-	// Convert map to slice
 	d.monitoredWallets = make([]models.WalletInfo, 0, len(walletMap))
 	for _, wallet := range walletMap {
 		d.monitoredWallets = append(d.monitoredWallets, wallet)
 	}
 
-	zap.L().Info("Loaded monitored wallets",
-		zap.Int("count", len(d.monitoredWallets)),
-		zap.Any("wallets", d.monitoredWallets))
-
+	zap.L().Info("Loaded monitored wallets from local store (fallback)",
+		zap.Int("count", len(d.monitoredWallets)))
 	return nil
 }
 
@@ -177,36 +245,46 @@ func (d *SendReceiveListener) fetchWalletTransactions(ctx context.Context, walle
 		zap.String("wallet_id", walletId),
 		zap.Time("since", since))
 
-	// Call Prime SDK
-	response, err := d.primeService.ListWalletTransactions(ctx, d.portfolioId, walletId, since)
+	// Call Prime SDK (automatically paginates through all pages)
+	primeTxns, err := d.primeService.ListWalletTransactions(ctx, d.portfolioId, walletId, since)
 	if err != nil {
 		return nil, fmt.Errorf("Prime API call failed: %w", err)
 	}
 
 	// Convert Prime SDK response to our internal format
-	transactions := make([]models.PrimeTransaction, 0)
+	transactions := make([]models.PrimeTransaction, 0, len(primeTxns))
 
-	for _, tx := range response.Transactions {
+	for _, tx := range primeTxns {
 		// Transaction times are already time.Time in the SDK
 		createdAt := tx.Created
 		completedAt := tx.Completed
 
 		// Convert to our internal format
 		primeTransaction := models.PrimeTransaction{
-			Id:             tx.Id,
-			WalletId:       tx.WalletId,
-			Type:           tx.Type,
-			Status:         tx.Status,
-			Symbol:         tx.Symbol,
-			Amount:         tx.Amount,
-			CreatedAt:      createdAt,
-			CompletedAt:    completedAt,
-			TransactionId:  tx.TransactionId,
-			Network:        tx.Network,
-			IdempotencyKey: tx.IdempotencyKey,
+			Id:                tx.Id,
+			WalletId:          tx.WalletId,
+			Type:              tx.Type,
+			Status:            tx.Status,
+			Symbol:            tx.Symbol,
+			DestinationSymbol: tx.DestinationSymbol,
+			Amount:            tx.Amount,
+			CreatedAt:         createdAt,
+			CompletedAt:       completedAt,
+			TransactionId:     tx.TransactionId,
+			Network:           tx.Network,
+			NetworkFees:       tx.NetworkFees,
+			Fees:              tx.Fees,
+			FeeSymbol:         tx.FeeSymbol,
+			BlockchainIds:     tx.BlockchainIds,
+			IdempotencyKey:    tx.IdempotencyKey,
 		}
 
-		// Extract transfer_to information
+		if tx.TransferFrom != nil {
+			primeTransaction.TransferFrom.Type = tx.TransferFrom.Type
+			primeTransaction.TransferFrom.Value = tx.TransferFrom.Value
+			primeTransaction.TransferFrom.Address = tx.TransferFrom.Address
+			primeTransaction.TransferFrom.AccountIdentifier = tx.TransferFrom.AccountIdentifier
+		}
 		if tx.TransferTo != nil {
 			primeTransaction.TransferTo.Type = tx.TransferTo.Type
 			primeTransaction.TransferTo.Value = tx.TransferTo.Value

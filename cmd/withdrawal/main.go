@@ -25,8 +25,8 @@ import (
 
 	"prime-send-receive-go/internal/common"
 	"prime-send-receive-go/internal/config"
-	"prime-send-receive-go/internal/database"
 	"prime-send-receive-go/internal/models"
+	"prime-send-receive-go/internal/store"
 	"prime-send-receive-go/internal/prime"
 
 	"github.com/google/uuid"
@@ -85,24 +85,44 @@ func parseAsset(assetStr string) (*assetInfo, error) {
 	}, nil
 }
 
-func verifyBalance(ctx context.Context, services *common.Services, user *models.User, symbol string, amount decimal.Decimal) (decimal.Decimal, error) {
-	currentBalance, err := services.DbService.GetUserBalance(ctx, user.Id, symbol)
+func verifyBalance(ctx context.Context, services *common.Services, user *models.User, symbol, network string, amount decimal.Decimal) (decimal.Decimal, error) {
+	// First try per-network balance (Formance returns per-network; SQLite ignores network).
+	balances, err := services.DbService.GetAllUserBalances(ctx, user.Id)
 	if err != nil {
-		return decimal.Zero, fmt.Errorf("failed to get user balance: %w", err)
+		return decimal.Zero, fmt.Errorf("failed to get user balances: %w", err)
 	}
 
-	if currentBalance.LessThan(amount) {
-		return currentBalance, fmt.Errorf("insufficient balance: current=%s, requested=%s, shortfall=%s",
-			currentBalance.String(), amount.String(), amount.Sub(currentBalance).String())
+	// Look for a balance matching this asset AND network.
+	networkBalance := decimal.NewFromInt(-1) // sentinel: not found
+	totalBalance := decimal.Zero
+	for _, b := range balances {
+		if b.Asset == symbol {
+			totalBalance = totalBalance.Add(b.Balance)
+			if b.Network == network {
+				networkBalance = b.Balance
+			}
+		}
 	}
 
-	zap.L().Info("✅ Balance verification successful",
+	// Use network-specific balance if available (Formance), otherwise aggregated (SQLite).
+	checkBalance := totalBalance
+	if networkBalance.GreaterThanOrEqual(decimal.Zero) {
+		checkBalance = networkBalance
+	}
+
+	if checkBalance.LessThan(amount) {
+		return checkBalance, fmt.Errorf("insufficient balance: current=%s, requested=%s, shortfall=%s",
+			checkBalance.String(), amount.String(), amount.Sub(checkBalance).String())
+	}
+
+	zap.L().Info("Balance verification successful",
 		zap.String("user", user.Email),
-		zap.String("current_balance", currentBalance.String()),
-		zap.String("withdrawal_amount", amount.String()),
-		zap.String("remaining_balance", currentBalance.Sub(amount).String()))
+		zap.String("symbol", symbol),
+		zap.String("network", network),
+		zap.String("balance", checkBalance.String()),
+		zap.String("total_across_networks", totalBalance.String()))
 
-	return currentBalance, nil
+	return checkBalance, nil
 }
 
 func getWalletForAsset(ctx context.Context, services *common.Services, userId string, asset *assetInfo) (string, error) {
@@ -160,10 +180,10 @@ func reserveFunds(ctx context.Context, services *common.Services, userId, symbol
 
 	err := services.DbService.ProcessWithdrawal(ctx, userId, symbol, amount, idempotencyKey)
 	if err != nil {
-		if errors.Is(err, database.ErrConcurrentModification) {
+		if errors.Is(err, store.ErrConcurrentModification) {
 			return fmt.Errorf("balance was modified by another withdrawal - please retry")
 		}
-		if errors.Is(err, database.ErrDuplicateTransaction) {
+		if errors.Is(err, store.ErrDuplicateTransaction) {
 			return fmt.Errorf("withdrawal with this idempotency key is already being processed - please retry in a moment")
 		}
 		return fmt.Errorf("failed to debit balance: %w", err)
@@ -202,32 +222,40 @@ func executeWithdrawal(ctx context.Context, services *common.Services, req *with
 }
 
 func rollbackWithdrawal(ctx context.Context, services *common.Services, userId, symbol string, amount decimal.Decimal, idempotencyKey string) error {
-	zap.L().Error("Prime API withdrawal failed - rolling back local debit",
+	zap.L().Error("Prime API withdrawal failed - rolling back",
 		zap.String("user_id", userId),
 		zap.String("asset", symbol),
 		zap.String("amount", amount.String()))
 
-	fmt.Println("\n❌ Prime API withdrawal failed - rolling back...")
-
-	err := services.DbService.ReverseWithdrawal(ctx, userId, symbol, amount, idempotencyKey)
+	// Prefer native revert (Formance) -- atomically undoes the original transaction.
+	// Falls back to ReverseWithdrawal (creates a compensating transaction) for SQLite.
+	err := services.DbService.RevertTransaction(ctx, idempotencyKey)
 	if err != nil {
-		return fmt.Errorf("CRITICAL: Failed to rollback withdrawal - manual intervention required: %w", err)
+		zap.L().Warn("Native revert not available or failed, using compensating transaction",
+			zap.Error(err))
+		err = services.DbService.ReverseWithdrawal(ctx, userId, symbol, amount, idempotencyKey)
+		if err != nil {
+			return fmt.Errorf("CRITICAL: Failed to rollback withdrawal - manual intervention required: %w", err)
+		}
 	}
 
-	fmt.Println("✅ Local balance restored (rollback successful)")
+	fmt.Println("✅ Balance restored (rollback successful)")
 	return nil
 }
 
 func printWithdrawalSummary(user *models.User, asset string, currentBalance, amount decimal.Decimal, destination string) {
+	parts := strings.SplitN(asset, "-", 2)
+	symbol := parts[0]
+
 	common.PrintHeader("WITHDRAWAL REQUEST", common.DefaultWidth)
 	fmt.Printf("User:              %s (%s)\n", user.Name, user.Email)
 	fmt.Printf("Asset:             %s\n", asset)
-	fmt.Printf("Current Balance:   %s\n", currentBalance.String())
-	fmt.Printf("Withdrawal Amount: %s\n", amount.String())
-	fmt.Printf("Remaining Balance: %s\n", currentBalance.Sub(amount).String())
+	fmt.Printf("Current Balance:   %s %s\n", currentBalance.String(), symbol)
+	fmt.Printf("Withdrawal Amount: %s %s\n", amount.String(), symbol)
+	fmt.Printf("Remaining Balance: %s %s\n", currentBalance.Sub(amount).String(), symbol)
 	fmt.Printf("Destination:       %s\n", destination)
 	common.PrintSeparator("=", common.DefaultWidth)
-	fmt.Println("\n✅ Balance verification PASSED - user has sufficient funds")
+	fmt.Println("\n✅ Balance verification PASSED")
 	fmt.Println()
 }
 
@@ -263,30 +291,36 @@ func main() {
 	defer services.Close()
 
 	// Find user by email
-	zap.L().Info("Looking up user by email", zap.String("email", req.email))
 	targetUser, err := services.DbService.GetUserByEmail(ctx, req.email)
 	if err != nil {
+		common.PrintHeader("WITHDRAWAL FAILED", common.DefaultWidth)
+		fmt.Printf("Error: User not found for email %s\n", req.email)
+		common.PrintSeparator("=", common.DefaultWidth)
 		zap.L().Fatal("User not found", zap.String("email", req.email), zap.Error(err))
 	}
-
-	zap.L().Info("User found",
-		zap.String("user_id", targetUser.Id),
-		zap.String("user_name", targetUser.Name),
-		zap.String("user_email", targetUser.Email))
 
 	// Parse asset to extract symbol and network
 	asset, err := parseAsset(req.asset)
 	if err != nil {
+		common.PrintHeader("WITHDRAWAL FAILED", common.DefaultWidth)
+		fmt.Printf("Error: Invalid asset format: %s\n", req.asset)
+		fmt.Printf("Expected: SYMBOL-network-type (e.g. USDC-base-mainnet)\n")
+		common.PrintSeparator("=", common.DefaultWidth)
 		zap.L().Fatal("Invalid asset format", zap.String("asset", req.asset), zap.Error(err))
 	}
 
-	// Verify balance
-	zap.L().Info("Checking user balance",
-		zap.String("user_id", targetUser.Id),
-		zap.String("symbol", asset.symbol))
-
-	currentBalance, err := verifyBalance(ctx, services, targetUser, asset.symbol, req.amount)
+	// Verify balance (checks per-network balance for Formance, aggregated for SQLite)
+	currentBalance, err := verifyBalance(ctx, services, targetUser, asset.symbol, asset.network, req.amount)
 	if err != nil {
+		common.PrintHeader("WITHDRAWAL FAILED", common.DefaultWidth)
+		fmt.Printf("User:              %s (%s)\n", targetUser.Name, targetUser.Email)
+		fmt.Printf("Asset:             %s on %s\n", asset.symbol, asset.network)
+		fmt.Printf("Balance (%s):  %s %s\n", asset.network, currentBalance.String(), asset.symbol)
+		fmt.Printf("Requested Amount:  %s %s\n", req.amount.String(), asset.symbol)
+		fmt.Printf("Shortfall:         %s %s\n", req.amount.Sub(currentBalance).String(), asset.symbol)
+		fmt.Printf("Destination:       %s\n", req.destination)
+		common.PrintSeparator("=", common.DefaultWidth)
+		fmt.Println("\n❌ Insufficient balance on this network")
 		zap.L().Fatal("Balance verification failed", zap.Error(err))
 	}
 
@@ -294,24 +328,13 @@ func main() {
 	printWithdrawalSummary(targetUser, req.asset, currentBalance, req.amount, req.destination)
 
 	// Get wallet ID
-	zap.L().Info("Looking up wallet ID for asset",
-		zap.String("asset", asset.symbol),
-		zap.String("network", asset.network))
-
 	walletId, err := getWalletForAsset(ctx, services, targetUser.Id, asset)
 	if err != nil {
 		zap.L().Fatal("Failed to get wallet", zap.Error(err))
 	}
 
-	zap.L().Info("Found wallet for asset",
-		zap.String("wallet_id", walletId),
-		zap.String("asset", req.asset))
-
 	// Generate idempotency key
 	idempotencyKey := generateIdempotencyKey(targetUser.Id)
-	zap.L().Info("Generated idempotency key",
-		zap.String("user_id", targetUser.Id),
-		zap.String("idempotency_key", idempotencyKey))
 
 	// Check if withdrawal already exists (idempotent)
 	exists, err := checkExistingWithdrawal(ctx, services, targetUser.Id, asset.symbol, idempotencyKey)
@@ -319,29 +342,29 @@ func main() {
 		zap.L().Fatal("Failed to check existing withdrawal", zap.Error(err))
 	}
 	if exists {
-		zap.L().Info("Returning existing withdrawal (idempotent)",
-			zap.String("idempotency_key", idempotencyKey),
-			zap.String("user_id", targetUser.Id),
-			zap.String("asset", asset.symbol))
 		return
 	}
 
-	// Reserve funds locally
+	// Reserve funds
+	fmt.Println("🔄 Reserving funds...")
 	err = reserveFunds(ctx, services, targetUser.Id, asset.symbol, req.amount, idempotencyKey)
 	if err != nil {
+		fmt.Println("❌ Failed to reserve funds")
 		zap.L().Fatal("Failed to reserve funds", zap.Error(err))
 	}
-
-	fmt.Printf("   New balance: %s\n\n", currentBalance.Sub(req.amount).String())
+	fmt.Printf("   Funds reserved. New balance: %s %s\n\n", currentBalance.Sub(req.amount).String(), asset.symbol)
 
 	// Execute withdrawal via Prime API
+	fmt.Println("🔄 Creating withdrawal via Prime API...")
 	err = executeWithdrawal(ctx, services, req, walletId, idempotencyKey)
 	if err != nil {
-		// Rollback on failure
+		fmt.Println("\n❌ Prime API withdrawal failed -- rolling back...")
 		rollbackErr := rollbackWithdrawal(ctx, services, targetUser.Id, asset.symbol, req.amount, idempotencyKey)
 		if rollbackErr != nil {
+			fmt.Println("❌ CRITICAL: Rollback failed -- manual intervention required")
 			zap.L().Fatal("CRITICAL: Rollback failed", zap.Error(rollbackErr))
 		}
+		fmt.Printf("✅ Balance restored to %s %s\n", currentBalance.String(), asset.symbol)
 		zap.L().Fatal("Prime API withdrawal failed (local balance rolled back)", zap.Error(err))
 	}
 

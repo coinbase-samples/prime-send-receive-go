@@ -26,6 +26,7 @@ import (
 
 	"prime-send-receive-go/internal/models"
 
+	"github.com/coinbase-samples/prime-sdk-go/addressbook"
 	"github.com/coinbase-samples/prime-sdk-go/client"
 	"github.com/coinbase-samples/prime-sdk-go/credentials"
 	"github.com/coinbase-samples/prime-sdk-go/model"
@@ -42,6 +43,7 @@ type Service struct {
 	portfoliosSvc   portfolios.PortfoliosService
 	walletsSvc      wallets.WalletsService
 	transactionsSvc transactions.TransactionsService
+	addressBookSvc  addressbook.AddressBookService
 }
 
 func NewService(creds *credentials.Credentials) (*Service, error) {
@@ -57,6 +59,7 @@ func NewService(creds *credentials.Credentials) (*Service, error) {
 		portfoliosSvc:   portfolios.NewPortfoliosService(restClient),
 		walletsSvc:      wallets.NewWalletsService(restClient),
 		transactionsSvc: transactions.NewTransactionsService(restClient),
+		addressBookSvc:  addressbook.NewAddressBookService(restClient),
 	}, nil
 }
 
@@ -143,6 +146,66 @@ func (s *Service) ListWallets(ctx context.Context, portfolioId, walletType strin
 	}
 
 	return walletList, nil
+}
+
+// LookupAddressBook searches the Prime address book for a given address.
+// Returns the matched entry (with asset symbol, name, state) or nil if not found.
+func (s *Service) LookupAddressBook(ctx context.Context, portfolioId, address string) (*models.AddressBookEntry, error) {
+	resp, err := s.addressBookSvc.GetAddressBook(ctx, &addressbook.GetAddressBookRequest{
+		PortfolioId: portfolioId,
+		Search:      address,
+		Pagination:  &model.PaginationParams{Limit: 10},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to query address book: %w", err)
+	}
+
+	for _, entry := range resp.Addresses {
+		if strings.EqualFold(entry.Address, address) {
+			return &models.AddressBookEntry{
+				Id:      entry.Id,
+				Symbol:  strings.ToUpper(entry.Symbol),
+				Name:    entry.Name,
+				Address: entry.Address,
+				State:   entry.State,
+			}, nil
+		}
+	}
+
+	return nil, nil
+}
+
+// ListWalletAddresses fetches existing deposit addresses from Prime for a wallet/network.
+func (s *Service) ListWalletAddresses(ctx context.Context, portfolioId, walletId, network string) ([]models.DepositAddress, error) {
+	request := &wallets.ListWalletAddressesRequest{
+		PortfolioId: portfolioId,
+		WalletId:    walletId,
+		NetworkId:   network,
+		Pagination: &model.PaginationParams{
+			Limit: 100,
+		},
+	}
+
+	response, err := s.walletsSvc.ListWalletAddresses(ctx, request)
+	if err != nil {
+		return nil, fmt.Errorf("unable to list wallet addresses: %w", err)
+	}
+
+	var addresses []models.DepositAddress
+	for _, addr := range response.Addresses {
+		addresses = append(addresses, models.DepositAddress{
+			Id:      addr.AccountIdentifier,
+			Address: addr.Address,
+			Network: network,
+		})
+	}
+
+	zap.L().Debug("Listed wallet addresses from Prime",
+		zap.String("wallet_id", walletId),
+		zap.String("network", network),
+		zap.Int("count", len(addresses)))
+
+	return addresses, nil
 }
 
 func (s *Service) CreateDepositAddress(ctx context.Context, portfolioId, walletId, asset, network string) (*models.DepositAddress, error) {
@@ -271,48 +334,52 @@ func (s *Service) CreateWithdrawal(ctx context.Context, params CreateWithdrawalP
 	}, nil
 }
 
-// ListWalletTransactions fetches transactions for a specific wallet
-func (s *Service) ListWalletTransactions(ctx context.Context, portfolioId, walletId string, startTime time.Time) (*transactions.ListWalletTransactionsResponse, error) {
-	zap.L().Debug("Making Prime API request",
+// ListWalletTransactions fetches all transactions for a wallet since startTime,
+// automatically paginating through all available pages.
+func (s *Service) ListWalletTransactions(ctx context.Context, portfolioId, walletId string, startTime time.Time) ([]*model.Transaction, error) {
+	zap.L().Debug("Fetching wallet transactions (paginated)",
 		zap.String("portfolio_id", portfolioId),
 		zap.String("wallet_id", walletId),
-		zap.Time("start_time", startTime),
-		zap.String("start_time_formatted", startTime.UTC().Format("2006-01-02T15:04:05Z")),
-		zap.Strings("types", []string{"DEPOSIT", "WITHDRAWAL"}))
+		zap.Time("start_time", startTime))
 
-	request := &transactions.ListWalletTransactionsRequest{
-		PortfolioId: portfolioId,
-		WalletId:    walletId,
-		Start:       startTime,
-		Types:       []string{"DEPOSIT", "WITHDRAWAL"},
-		Pagination: &model.PaginationParams{
-			Limit: 500,
-		},
-	}
+	var all []*model.Transaction
+	cursor := ""
 
-	response, err := s.transactionsSvc.ListWalletTransactions(ctx, request)
-	if err != nil {
-		zap.L().Error("Failed to list wallet transactions",
+	for page := 1; ; page++ {
+		request := &transactions.ListWalletTransactionsRequest{
+			PortfolioId: portfolioId,
+			WalletId:    walletId,
+			Start:       startTime,
+			Pagination:  &model.PaginationParams{Limit: 500, Cursor: cursor},
+		}
+
+		response, err := s.transactionsSvc.ListWalletTransactions(ctx, request)
+		if err != nil {
+			zap.L().Error("Failed to list wallet transactions",
+				zap.String("wallet_id", walletId),
+				zap.Int("page", page),
+				zap.Error(err))
+			return nil, fmt.Errorf("unable to list wallet transactions (page %d): %w", page, err)
+		}
+
+		all = append(all, response.Transactions...)
+
+		zap.L().Debug("Fetched transaction page",
 			zap.String("wallet_id", walletId),
-			zap.Error(err))
-		return nil, fmt.Errorf("unable to list wallet transactions: %w", err)
+			zap.Int("page", page),
+			zap.Int("page_count", len(response.Transactions)),
+			zap.Int("total_so_far", len(all)),
+			zap.Bool("has_next", response.Pagination != nil && response.Pagination.HasNext))
+
+		if response.Pagination == nil || !response.Pagination.HasNext {
+			break
+		}
+		cursor = response.Pagination.NextCursor
 	}
 
-	zap.L().Debug("Prime API response received",
+	zap.L().Debug("Fetched all wallet transactions",
 		zap.String("wallet_id", walletId),
-		zap.Int("count", len(response.Transactions)))
+		zap.Int("total", len(all)))
 
-	// Log details of each transaction for debugging
-	for i, tx := range response.Transactions {
-		zap.L().Debug("Transaction details",
-			zap.Int("index", i),
-			zap.String("id", tx.Id),
-			zap.String("type", tx.Type),
-			zap.String("status", tx.Status),
-			zap.String("symbol", tx.Symbol),
-			zap.Time("created", tx.Created),
-			zap.String("amount", tx.Amount))
-	}
-
-	return response, nil
+	return all, nil
 }
